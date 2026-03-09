@@ -1,0 +1,85 @@
+[package]
+name = "teri"
+version = "0.1.0"
+edition = "2021"
+authors = ["Kresna Sucandra"]
+description = "Teri — A Rust-native Swarm Intelligence Prediction Engine"
+license = "MIT"
+repository = "https://github.com/kresna/teri"
+keywords = ["swarm", "multi-agent", "simulation", "llm", "prediction"]
+categories = ["simulation", "science"]
+
+[[bin]]
+name = "teri"
+path = "src/main.rs"
+
+[lib]
+name = "teri"
+path = "src/lib.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# HTTP server (API layer)
+axum = { version = "0.7", features = ["macros"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# HTTP client (LLM API calls)
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bincode = "1"
+
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+
+# Graph data structures (knowledge graph)
+petgraph = "0.6"
+
+# Parallel computation (agent simulation)
+rayon = "1"
+
+# Async stream utilities
+futures = "0.3"
+tokio-util = { version = "0.7", features = ["io"] }
+
+# Async trait support
+async-trait = "0.1"
+
+# Persistent key-value store (agent memory)
+redb = "2"
+
+# Logging & tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Config & env
+dotenvy = "0.15"
+config = "0.14"
+
+# Error handling
+anyhow = "1"
+thiserror = "1"
+
+# UUID for agent/world IDs
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Templating (persona/prompt templates)
+minijinja = "1"
+
+[dev-dependencies]
+tokio-test = "0.4"
+pretty_assertions = "1"
+tempfile = "3"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1

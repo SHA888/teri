@@ -1,0 +1,51 @@
+# Rust
+/target
+Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Data & Database files
+data/
+*.db
+*.redb
+*.rocksdb
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+*~
+
+# IDE files
+.vscode/
+.idea/
+.windsurf/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.o
+*.so
+*.dylib
+*.dll
+
+# Test coverage
+tarpaulin-report.html
+cobertura.xml
+
+# Flamegraph profiling
+flamegraph.svg
+perf.data
+perf.data.old
