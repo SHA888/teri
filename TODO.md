@@ -44,8 +44,8 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
   - [x] Streaming response handling (simplified, TODO: proper SSE)
   - [x] Error handling and retries with exponential backoff
 - [x] Document adapter pattern and zero vendor lock-in design
-- [ ] Add LLM client tests with mock responses
-- [ ] Implement proper SSE streaming (currently returns single chunk)
+- [x] Add LLM client tests with mock responses
+- [x] Implement proper SSE streaming (OpenAI, Anthropic, Gemini adapters)
 - [x] Add example adapters in documentation (Anthropic, llama.cpp)
 
 ### Error Handling

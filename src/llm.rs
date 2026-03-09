@@ -207,7 +207,7 @@ impl LlmClient for OpenAiAdapter {
                             .and_then(|c| c.get("delta"))
                             .and_then(|d| d.get("content"))
                             .and_then(|c| c.as_str()) {
-                                yield Ok(content.to_string());
+                                yield content.to_string();
                         }
                     }
                 }
@@ -326,9 +326,72 @@ impl LlmClient for AnthropicAdapter {
     async fn stream(&self, prompt: &str) -> Result<Pin<Box<dyn Stream<Item = Result<String>> + Send>>> {
         // Simplified streaming - for now just return complete response as single chunk
         // TODO: Implement proper SSE streaming with Anthropic's streaming API
-        let response = self.complete(prompt).await?;
-        let stream = futures::stream::once(async move { Ok(response) });
-        Ok(Box::pin(stream))
+        let payload = serde_json::json!({
+            "model": self.model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            "max_tokens": 4096,
+            "stream": true,
+        });
+
+        let resp = self
+            .client
+            .post("https://api.anthropic.com/v1/messages")
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", "2023-06-01")
+            .header("Content-Type", "application/json")
+            .header("Accept", "text/event-stream")
+            .timeout(std::time::Duration::from_secs(self.timeout_secs))
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| TeriError::Http(e.to_string()))?;
+
+        if !resp.status().is_success() {
+            return Err(TeriError::Http(format!(
+                "HTTP {}: {}",
+                resp.status(),
+                resp.text().await.unwrap_or_default()
+            )));
+        }
+
+        let mut byte_stream = resp.bytes_stream();
+        let sse_stream = try_stream! {
+            let mut buffer = String::new();
+            while let Some(chunk) = byte_stream.next().await {
+                let chunk = chunk.map_err(|e| TeriError::Http(e.to_string()))?;
+                buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+                while let Some(idx) = buffer.find('\n') {
+                    let line = buffer[..idx].trim_end_matches('\r').to_string();
+                    buffer = buffer[idx + 1..].to_string();
+
+                    if line.is_empty() || !line.starts_with("data: ") {
+                        continue;
+                    }
+
+                    let data = line.trim_start_matches("data: ").trim();
+                    if data == "[DONE]" {
+                        return;
+                    }
+
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+                        if let Some(content) = json
+                            .get("delta")
+                            .and_then(|d| d.get("text"))
+                            .and_then(|t| t.as_str()) {
+                                yield content.to_string();
+                        }
+                    }
+                }
+            }
+        };
+
+        Ok(Box::pin(sse_stream))
     }
 }
 
@@ -439,17 +502,82 @@ impl LlmClient for GeminiAdapter {
     }
 
     async fn stream(&self, prompt: &str) -> Result<Pin<Box<dyn Stream<Item = Result<String>> + Send>>> {
-        // Simplified streaming - for now just return complete response as single chunk
-        // TODO: Implement proper streaming with Gemini's streamGenerateContent API
-        let response = self.complete(prompt).await?;
-        let stream = futures::stream::once(async move { Ok(response) });
-        Ok(Box::pin(stream))
+        let payload = serde_json::json!({
+            "contents": [{
+                "parts": [{
+                    "text": prompt
+                }]
+            }]
+        });
+
+        let url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?key={}",
+            self.model, self.api_key
+        );
+
+        let resp = self
+            .client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "text/event-stream")
+            .timeout(std::time::Duration::from_secs(self.timeout_secs))
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| TeriError::Http(e.to_string()))?;
+
+        if !resp.status().is_success() {
+            return Err(TeriError::Http(format!(
+                "HTTP {}: {}",
+                resp.status(),
+                resp.text().await.unwrap_or_default()
+            )));
+        }
+
+        let mut byte_stream = resp.bytes_stream();
+        let sse_stream = try_stream! {
+            let mut buffer = String::new();
+            while let Some(chunk) = byte_stream.next().await {
+                let chunk = chunk.map_err(|e| TeriError::Http(e.to_string()))?;
+                buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+                while let Some(idx) = buffer.find('\n') {
+                    let line = buffer[..idx].trim_end_matches('\r').to_string();
+                    buffer = buffer[idx + 1..].to_string();
+
+                    if line.is_empty() || !line.starts_with("data: ") {
+                        continue;
+                    }
+
+                    let data = line.trim_start_matches("data: ").trim();
+                    if data == "[DONE]" {
+                        return;
+                    }
+
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+                        if let Some(content) = json
+                            .get("candidates")
+                            .and_then(|c| c.get(0))
+                            .and_then(|c| c.get("content"))
+                            .and_then(|c| c.get("parts"))
+                            .and_then(|p| p.get(0))
+                            .and_then(|p| p.get("text"))
+                            .and_then(|t| t.as_str()) {
+                                yield content.to_string();
+                        }
+                    }
+                }
+            }
+        };
+
+        Ok(Box::pin(sse_stream))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use httpmock::prelude::*;
 
     #[test]
     fn test_openai_adapter_creation() {
@@ -463,5 +591,67 @@ mod tests {
         };
 
         let _client = OpenAiAdapter::new(&config);
+    }
+
+    #[tokio::test]
+    async fn test_openai_adapter_complete() {
+        let server = MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(POST)
+                .path("/chat/completions");
+            then.status(200)
+                .header("Content-Type", "application/json")
+                .body(r#"{
+                    "choices": [
+                        {"message": {"content": "Hello from mock"}}
+                    ]
+                }"#);
+        });
+
+        let config = LlmConfig {
+            base_url: server.base_url(),
+            api_key: "test-key".to_string(),
+            model: "gpt-4o".to_string(),
+            embed_model: "text-embedding-3-small".to_string(),
+            timeout_secs: 30,
+            max_retries: 0,
+        };
+
+        let client = OpenAiAdapter::new(&config);
+        let resp = client.complete("hi").await.unwrap();
+        assert_eq!(resp, "Hello from mock");
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_openai_adapter_stream() {
+        let server = MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(POST)
+                .path("/chat/completions");
+            then.status(200)
+                .header("Content-Type", "text/event-stream")
+                .body("data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\
+data: {\"choices\":[{\"delta\":{\"content\":\" world\"}}]}\n\
+data: [DONE]\n");
+        });
+
+        let config = LlmConfig {
+            base_url: server.base_url(),
+            api_key: "test-key".to_string(),
+            model: "gpt-4o".to_string(),
+            embed_model: "text-embedding-3-small".to_string(),
+            timeout_secs: 30,
+            max_retries: 0,
+        };
+
+        let client = OpenAiAdapter::new(&config);
+        let mut stream = client.stream("hi").await.unwrap();
+        let mut output = String::new();
+        while let Some(chunk) = stream.next().await {
+            output.push_str(&chunk.unwrap());
+        }
+        assert_eq!(output, "Hello world");
+        mock.assert();
     }
 }
