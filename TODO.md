@@ -46,7 +46,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 - [x] Document adapter pattern and zero vendor lock-in design
 - [ ] Add LLM client tests with mock responses
 - [ ] Implement proper SSE streaming (currently returns single chunk)
-- [ ] Add example adapters in documentation (Anthropic, llama.cpp)
+- [x] Add example adapters in documentation (Anthropic, llama.cpp)
 
 ### Error Handling
 - [ ] Define custom error types using `thiserror`

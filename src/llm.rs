@@ -1,7 +1,8 @@
 use crate::config::LlmConfig;
 use crate::error::{Result, TeriError};
+use async_stream::try_stream;
 use async_trait::async_trait;
-use futures::Stream;
+use futures::{Stream, StreamExt};
 use serde::de::DeserializeOwned;
 use std::pin::Pin;
 
@@ -146,11 +147,74 @@ impl LlmClient for OpenAiAdapter {
     }
 
     async fn stream(&self, prompt: &str) -> Result<Pin<Box<dyn Stream<Item = Result<String>> + Send>>> {
-        // Simplified streaming - for now just return complete response as single chunk
-        // TODO: Implement proper SSE streaming
-        let response = self.complete(prompt).await?;
-        let stream = futures::stream::once(async move { Ok(response) });
-        Ok(Box::pin(stream))
+        let payload = serde_json::json!({
+            "model": self.model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            "temperature": 0.7,
+            "stream": true,
+        });
+
+        let url = format!("{}/chat/completions", self.base_url);
+        let resp = self
+            .client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .header("Accept", "text/event-stream")
+            .timeout(std::time::Duration::from_secs(self.timeout_secs))
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|e| TeriError::Http(e.to_string()))?;
+
+        if !resp.status().is_success() {
+            return Err(TeriError::Http(format!(
+                "HTTP {}: {}",
+                resp.status(),
+                resp.text().await.unwrap_or_default()
+            )));
+        }
+
+        let mut byte_stream = resp.bytes_stream();
+        let sse_stream = try_stream! {
+            let mut buffer = String::new();
+            while let Some(chunk) = byte_stream.next().await {
+                let chunk = chunk.map_err(|e| TeriError::Http(e.to_string()))?;
+                buffer.push_str(&String::from_utf8_lossy(&chunk));
+
+                while let Some(idx) = buffer.find('\n') {
+                    let line = buffer[..idx].trim_end_matches('\r').to_string();
+                    buffer = buffer[idx + 1..].to_string();
+
+                    if line.is_empty() || !line.starts_with("data: ") {
+                        continue;
+                    }
+
+                    let data = line.trim_start_matches("data: ").trim();
+                    if data == "[DONE]" {
+                        return;
+                    }
+
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+                        if let Some(content) = json
+                            .get("choices")
+                            .and_then(|c| c.get(0))
+                            .and_then(|c| c.get("delta"))
+                            .and_then(|d| d.get("content"))
+                            .and_then(|c| c.as_str()) {
+                                yield Ok(content.to_string());
+                        }
+                    }
+                }
+            }
+        };
+
+        Ok(Box::pin(sse_stream))
     }
 }
 

@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["Kresna Sucandra"]
 description = "Teri — A Rust-native Swarm Intelligence Prediction Engine"
 license = "MIT"
-repository = "https://github.com/kresna/teri"
+repository = "https://github.com/SHA888/teri"
 keywords = ["swarm", "multi-agent", "simulation", "llm", "prediction"]
 categories = ["simulation", "science"]
 
@@ -46,6 +46,7 @@ rayon = "1"
 # Async stream utilities
 futures = "0.3"
 tokio-util = { version = "0.7", features = ["io"] }
+async-stream = "0.3"
 
 # Async trait support
 async-trait = "0.1"
