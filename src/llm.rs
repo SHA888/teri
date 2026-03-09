@@ -225,6 +225,7 @@ impl LlmClient for OpenAiAdapter {
 /// Adapter for Anthropic Claude API (non-OpenAI-compatible).
 /// Uses Anthropic's Messages API format.
 pub struct AnthropicAdapter {
+    base_url: String,
     api_key: String,
     model: String,
     client: reqwest::Client,
@@ -235,6 +236,7 @@ pub struct AnthropicAdapter {
 impl AnthropicAdapter {
     pub fn new(api_key: String, model: String) -> Self {
         Self {
+            base_url: "https://api.anthropic.com".to_string(),
             api_key,
             model,
             client: reqwest::Client::new(),
@@ -243,14 +245,26 @@ impl AnthropicAdapter {
         }
     }
 
+    #[cfg(test)]
+    pub fn new_with_base(api_key: String, model: String, base_url: String) -> Self {
+        Self {
+            base_url,
+            api_key,
+            model,
+            client: reqwest::Client::new(),
+            timeout_secs: 30,
+            max_retries: 0,
+        }
+    }
+
     async fn call_api(&self, payload: serde_json::Value) -> Result<serde_json::Value> {
-        let url = "https://api.anthropic.com/v1/messages";
+        let url = format!("{}/v1/messages", self.base_url);
         let mut retries = 0;
 
         loop {
             let response = self
                 .client
-                .post(url)
+                .post(&url)
                 .header("x-api-key", &self.api_key)
                 .header("anthropic-version", "2023-06-01")
                 .header("Content-Type", "application/json")
@@ -338,9 +352,11 @@ impl LlmClient for AnthropicAdapter {
             "stream": true,
         });
 
+        let url = format!("{}/v1/messages", self.base_url);
+
         let resp = self
             .client
-            .post("https://api.anthropic.com/v1/messages")
+            .post(&url)
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", "2023-06-01")
             .header("Content-Type", "application/json")
@@ -402,6 +418,7 @@ impl LlmClient for AnthropicAdapter {
 /// Adapter for Google Gemini API (non-OpenAI-compatible).
 /// Uses Google's generateContent API format.
 pub struct GeminiAdapter {
+    base_url: String,
     api_key: String,
     model: String,
     client: reqwest::Client,
@@ -412,6 +429,7 @@ pub struct GeminiAdapter {
 impl GeminiAdapter {
     pub fn new(api_key: String, model: String) -> Self {
         Self {
+            base_url: "https://generativelanguage.googleapis.com".to_string(),
             api_key,
             model,
             client: reqwest::Client::new(),
@@ -420,10 +438,22 @@ impl GeminiAdapter {
         }
     }
 
+    #[cfg(test)]
+    pub fn new_with_base(api_key: String, model: String, base_url: String) -> Self {
+        Self {
+            base_url,
+            api_key,
+            model,
+            client: reqwest::Client::new(),
+            timeout_secs: 30,
+            max_retries: 0,
+        }
+    }
+
     async fn call_api(&self, payload: serde_json::Value) -> Result<serde_json::Value> {
         let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
-            self.model, self.api_key
+            "{}/v1beta/models/{}:generateContent?key={}",
+            self.base_url, self.model, self.api_key
         );
         let mut retries = 0;
 
@@ -511,8 +541,8 @@ impl LlmClient for GeminiAdapter {
         });
 
         let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/{}:streamGenerateContent?key={}",
-            self.model, self.api_key
+            "{}/v1beta/models/{}:streamGenerateContent?key={}",
+            self.base_url, self.model, self.api_key
         );
 
         let resp = self
@@ -652,6 +682,62 @@ data: [DONE]\n");
             output.push_str(&chunk.unwrap());
         }
         assert_eq!(output, "Hello world");
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_anthropic_adapter_stream() {
+        let server = MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(POST)
+                .path("/v1/messages");
+            then.status(200)
+                .header("Content-Type", "text/event-stream")
+                .body("data: {\"delta\":{\"text\":\"Hello\"}}\n\
+data: {\"delta\":{\"text\":\" Claude\"}}\n\
+data: [DONE]\n");
+        });
+
+        let client = AnthropicAdapter::new_with_base(
+            "sk-ant-test".to_string(),
+            "claude-3.5-sonnet".to_string(),
+            server.base_url(),
+        );
+
+        let mut stream = client.stream("hi").await.unwrap();
+        let mut output = String::new();
+        while let Some(chunk) = stream.next().await {
+            output.push_str(&chunk.unwrap());
+        }
+        assert_eq!(output, "Hello Claude");
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_gemini_adapter_stream() {
+        let server = MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(POST)
+                .path("/v1beta/models/gemini-1.5-pro:streamGenerateContent");
+            then.status(200)
+                .header("Content-Type", "text/event-stream")
+                .body("data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"Hello\"}]}}]}\n\
+data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\" Gemini\"}]}}]}\n\
+data: [DONE]\n");
+        });
+
+        let client = GeminiAdapter::new_with_base(
+            "AIza-test".to_string(),
+            "gemini-1.5-pro".to_string(),
+            server.base_url(),
+        );
+
+        let mut stream = client.stream("hi").await.unwrap();
+        let mut output = String::new();
+        while let Some(chunk) = stream.next().await {
+            output.push_str(&chunk.unwrap());
+        }
+        assert_eq!(output, "Hello Gemini");
         mock.assert();
     }
 }
