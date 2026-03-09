@@ -65,14 +65,14 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 ## Phase 1: Seed Module
 
 ### Core Types (`src/seed/mod.rs`)
-- [ ] Define `SeedDocument` struct
-  - [ ] `id: Uuid`
-  - [ ] `raw_text: String`
-  - [ ] `metadata: HashMap<String, String>`
-  - [ ] `created_at: DateTime<Utc>`
-- [ ] Define `SeedIngestor` struct
-- [ ] Implement `SeedIngestor::from_file(path: &str) -> Result<SeedDocument>`
-- [ ] Implement `SeedIngestor::from_url(url: &str) -> Result<SeedDocument>`
+- [x] Define `SeedDocument` struct
+  - [x] `id: Uuid`
+  - [x] `raw_text: String`
+  - [x] `metadata: HashMap<String, String>`
+  - [x] `created_at: DateTime<Utc>`
+- [x] Define `SeedIngestor` struct
+- [x] Implement `SeedIngestor::from_file(path: &str) -> Result<SeedDocument>`
+- [x] Implement `SeedIngestor::from_url(url: &str) -> Result<SeedDocument>`
 
 ### File Format Support
 - [ ] **Plain text** - Direct passthrough
