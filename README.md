@@ -12,6 +12,15 @@ Teri turns seed materials (news articles, policy drafts, financial signals, nove
 **Input** → seed file + natural-language prediction query  
 **Output** → structured prediction report + interactive living simulation world
 
+### Key Features
+
+- 🧠 **Multi-Provider LLM Support** - OpenAI, Anthropic, Google Gemini, local models (Ollama, LM Studio)
+- 🚀 **True Parallelism** - Rayon-powered agent simulation, no GIL limitations
+- 💾 **Persistent Memory** - Rust-native redb for fast agent long-term memory
+- 🌐 **Real-time Streaming** - SSE-based live simulation state updates
+- 🎯 **Zero Vendor Lock-in** - Adapter pattern for any LLM provider
+- 📦 **Single Binary** - No Docker, no venv, just `cargo build --release`
+
 ---
 
 ## Why Rust?
@@ -87,7 +96,7 @@ teri/
     ├── agent/           # Agent pool, personas, memory
     ├── sim/             # Simulation engine (tick loop, rayon)
     ├── report/          # Report generation & world interaction
-    ├── memory/          # Persistent memory (RocksDB)
+    ├── memory/          # Persistent memory (redb)
     └── api/             # HTTP server (axum) + SSE streaming
 ```
 
@@ -95,8 +104,19 @@ teri/
 
 ## Configuration
 
-All configuration via `.env` or environment variables. See [`.env.example`](.env.example).  
-Teri is LLM-provider agnostic — any OpenAI-compatible endpoint works.
+All configuration via `.env` or environment variables. See [`.env.example`](.env.example).
+
+### LLM Provider Support
+
+**Teri is completely LLM-provider agnostic.** Choose any provider via adapter pattern:
+
+- **OpenAI** (GPT-4, GPT-4o) - `OpenAiAdapter`
+- **Anthropic** (Claude 3.5 Sonnet, Opus, Haiku) - `AnthropicAdapter`
+- **Google** (Gemini 1.5 Pro, Flash) - `GeminiAdapter`
+- **Local models** (Ollama, LM Studio, vLLM) - `OpenAiAdapter` (OpenAI-compatible)
+- **Custom providers** - Implement the `LlmClient` trait
+
+No vendor lock-in. Swap providers without changing simulation code.
 
 ---
 

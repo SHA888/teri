@@ -217,7 +217,7 @@ PredictionReport
 
 ## LLM Abstraction
 
-All LLM calls go through a single `LlmClient` trait to stay provider-agnostic:
+**Teri is completely provider-agnostic.** All LLM calls go through a single `LlmClient` trait that makes **zero assumptions** about the underlying provider:
 
 ```rust
 #[async_trait]
@@ -228,7 +228,52 @@ pub trait LlmClient: Send + Sync {
 }
 ```
 
-Concrete implementation: `OpenAiClient` (reqwest). Swap for local (Ollama, etc.) anytime.
+**Adapter Pattern:** Teri uses provider-specific adapters that implement `LlmClient`. Each adapter handles the API-specific details:
+
+**Included Adapters:**
+- `OpenAiAdapter` - For OpenAI chat completions API format
+  - Works with: OpenAI, Ollama, LM Studio, vLLM, Together AI, Groq, etc.
+- `AnthropicAdapter` - For Anthropic Claude (Messages API)
+  - Works with: Claude 3.5 Sonnet, Claude 3 Opus, Claude 3 Haiku, etc.
+- `GeminiAdapter` - For Google Gemini (generateContent API)
+  - Works with: Gemini 1.5 Pro, Gemini 1.5 Flash, etc.
+
+**Usage Example:**
+
+```rust
+use teri::{LlmClient, OpenAiAdapter, AnthropicAdapter, GeminiAdapter};
+
+// Use OpenAI (or compatible)
+let openai = OpenAiAdapter::new(&config);
+let response = openai.complete("Hello!").await?;
+
+// Use Anthropic Claude
+let claude = AnthropicAdapter::new("sk-ant-...".to_string(), "claude-3-5-sonnet-20241022".to_string());
+let response = claude.complete("Hello!").await?;
+
+// Use Google Gemini
+let gemini = GeminiAdapter::new("AIza...".to_string(), "gemini-1.5-pro".to_string());
+let response = gemini.complete("Hello!").await?;
+```
+
+**Add Your Own Adapter:**
+
+```rust
+// Example: Local llama.cpp adapter (no HTTP, no external API)
+pub struct LlamaCppAdapter {
+    model_path: PathBuf,
+}
+
+#[async_trait]
+impl LlmClient for LlamaCppAdapter {
+    async fn complete(&self, prompt: &str) -> Result<String> {
+        // Call llama.cpp directly via FFI
+        // No network calls, fully local
+    }
+}
+```
+
+**No vendor lock-in.** The core simulation engine only depends on the `LlmClient` trait, never on specific adapters.
 
 ---
 

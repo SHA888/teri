@@ -32,18 +32,21 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 - [x] Create logging utilities module
 
 ### LLM Client Abstraction (Critical Path)
-- [ ] Define `LlmClient` trait in `src/llm.rs`
-  - [ ] `async fn complete(&self, prompt: &str) -> Result<String>`
-  - [ ] `async fn complete_json<T>(&self, prompt: &str) -> Result<T>`
-  - [ ] `async fn stream(&self, prompt: &str) -> Result<impl Stream<Item = String>>`
-- [ ] Implement `OpenAiClient` struct
-  - [ ] Constructor with base_url, api_key, model
-  - [ ] HTTP client using `reqwest`
-  - [ ] JSON mode support for structured outputs
-  - [ ] Streaming response handling
-  - [ ] Error handling and retries
+- [x] Define `LlmClient` trait in `src/llm.rs` (completely provider-agnostic)
+  - [x] `async fn complete(&self, prompt: &str) -> Result<String>`
+  - [x] `async fn complete_json<T>(&self, prompt: &str) -> Result<T>`
+  - [x] `async fn stream(&self, prompt: &str) -> Result<impl Stream<Item = String>>`
+- [x] Implement adapter pattern for provider-specific implementations
+- [x] Implement `OpenAiAdapter` (for OpenAI chat completions API format)
+  - [x] Constructor with base_url, api_key, model
+  - [x] HTTP client using `reqwest`
+  - [x] JSON mode support for structured outputs
+  - [x] Streaming response handling (simplified, TODO: proper SSE)
+  - [x] Error handling and retries with exponential backoff
+- [x] Document adapter pattern and zero vendor lock-in design
 - [ ] Add LLM client tests with mock responses
-- [ ] Document how to swap providers (Ollama, etc.)
+- [ ] Implement proper SSE streaming (currently returns single chunk)
+- [ ] Add example adapters in documentation (Anthropic, llama.cpp)
 
 ### Error Handling
 - [ ] Define custom error types using `thiserror`
