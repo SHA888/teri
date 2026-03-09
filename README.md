@@ -1,6 +1,6 @@
 # Teri
 
-> **Rust-native Swarm Intelligence Prediction Engine**  
+> **Rust-native Swarm Intelligence Prediction Engine**
 > A ground-up rewrite of [MiroFish](https://github.com/666ghj/MiroFish) — designed for performance, type safety, and deployment simplicity.
 
 ---
@@ -9,7 +9,7 @@
 
 Teri turns seed materials (news articles, policy drafts, financial signals, novels) into a **high-fidelity parallel digital world** populated by thousands of independent agents. Each agent carries its own persona, long-term memory, and behavioural logic. The swarm self-organises, and you observe — or intervene — from a God's-eye view.
 
-**Input** → seed file + natural-language prediction query  
+**Input** → seed file + natural-language prediction query
 **Output** → structured prediction report + interactive living simulation world
 
 ### Key Features
@@ -122,14 +122,14 @@ No vendor lock-in. Swap providers without changing simulation code.
 
 ## Status
 
-🚧 **Pre-alpha — scaffold only.**  
+🚧 **Pre-alpha — scaffold only.**
 Module interfaces are defined; implementation is in progress.
 
 ---
 
 ## Acknowledgements
 
-MiroFish by [BaiFu / 666ghj](https://github.com/666ghj) is the original reference implementation.  
+MiroFish by [BaiFu / 666ghj](https://github.com/666ghj) is the original reference implementation.
 Simulation design draws on [OASIS](https://github.com/camel-ai/oasis) from the CAMEL-AI team.
 
 ---

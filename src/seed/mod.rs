@@ -18,7 +18,7 @@ impl SeedIngestor {
     pub async fn from_file(path: &str) -> Result<SeedDocument> {
         let content = tokio::fs::read_to_string(path)
             .await
-            .map_err(|e| TeriError::Seed(format!("Failed to read file: {}", e)))?;
+            .map_err(|e| TeriError::Seed(format!("Failed to read file: {e}")))?;
 
         let metadata = Self::extract_file_metadata(path)?;
 
@@ -31,21 +31,20 @@ impl SeedIngestor {
     }
 
     pub async fn from_url(url: &str) -> Result<SeedDocument> {
-        let response = reqwest::get(url)
+        let resp = reqwest::get(url)
             .await
-            .map_err(|e| TeriError::Seed(format!("Failed to fetch URL: {}", e)))?;
-
-        let content = response
+            .map_err(|e| TeriError::Seed(format!("Failed to fetch URL: {e}")))?;
+        let text = resp
             .text()
             .await
-            .map_err(|e| TeriError::Seed(format!("Failed to read response: {}", e)))?;
+            .map_err(|e| TeriError::Seed(format!("Failed to read response: {e}")))?;
 
         let mut metadata = HashMap::new();
         metadata.insert("source_url".to_string(), url.to_string());
 
         Ok(SeedDocument {
             id: Uuid::new_v4(),
-            raw_text: content,
+            raw_text: text,
             metadata,
             created_at: Utc::now(),
         })
@@ -73,7 +72,7 @@ mod tests {
     async fn test_seed_ingestor_from_file() {
         let test_file = "/tmp/test_seed.txt";
         let test_content = "This is a test seed document";
-        
+
         tokio::fs::write(test_file, test_content)
             .await
             .expect("Failed to write test file");

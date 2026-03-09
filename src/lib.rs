@@ -4,11 +4,11 @@ pub mod config;
 pub mod error;
 pub mod graph;
 pub mod llm;
+pub mod logging;
 pub mod memory;
 pub mod report;
 pub mod seed;
 pub mod sim;
-pub mod logging;
 
 pub use config::Config;
 pub use error::{Result, TeriError};

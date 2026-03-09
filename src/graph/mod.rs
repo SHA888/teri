@@ -70,7 +70,7 @@ impl KnowledgeGraph {
         let idx = self
             .index
             .get(entity_name)
-            .ok_or_else(|| TeriError::Graph(format!("Entity not found: {}", entity_name)))?;
+            .ok_or_else(|| TeriError::Graph(format!("Entity not found: {entity_name}")))?;
 
         let neighbors = self
             .inner

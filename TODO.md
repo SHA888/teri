@@ -1,6 +1,6 @@
 # Teri Development TODO
 
-> **Status:** Pre-alpha → Production-ready  
+> **Status:** Pre-alpha → Production-ready
 > **Last Updated:** 2026-03-09
 
 This checklist tracks end-to-end development of Teri, organized by implementation phase. Check off tasks as completed.

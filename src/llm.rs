@@ -12,7 +12,10 @@ use std::pin::Pin;
 pub trait LlmClient: Send + Sync {
     async fn complete(&self, prompt: &str) -> Result<String>;
     async fn complete_json<T: DeserializeOwned>(&self, prompt: &str) -> Result<T>;
-    async fn stream(&self, prompt: &str) -> Result<Pin<Box<dyn Stream<Item = Result<String>> + Send>>>;
+    async fn stream(
+        &self,
+        prompt: &str,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<String>> + Send>>>;
 }
 
 // ============================================================================
@@ -69,15 +72,13 @@ impl OpenAiAdapter {
                             .map_err(|e| TeriError::Http(e.to_string()));
                     } else if resp.status().is_server_error() && retries < self.max_retries {
                         retries += 1;
-                        tokio::time::sleep(std::time::Duration::from_secs(2_u64.pow(retries))).await;
+                        tokio::time::sleep(std::time::Duration::from_secs(2_u64.pow(retries)))
+                            .await;
                         continue;
                     } else {
                         let status = resp.status();
                         let body = resp.text().await.unwrap_or_default();
-                        return Err(TeriError::Http(format!(
-                            "HTTP {}: {}",
-                            status, body
-                        )));
+                        return Err(TeriError::Http(format!("HTTP {status}: {body}")));
                     }
                 }
                 Err(e) if retries < self.max_retries && e.is_timeout() => {
@@ -143,10 +144,13 @@ impl LlmClient for OpenAiAdapter {
             .ok_or_else(|| TeriError::Llm("Invalid response format".to_string()))?;
 
         serde_json::from_str(content)
-            .map_err(|e| TeriError::Llm(format!("Failed to parse JSON response: {}", e)))
+            .map_err(|e| TeriError::Llm(format!("Failed to parse JSON response: {e}")))
     }
 
-    async fn stream(&self, prompt: &str) -> Result<Pin<Box<dyn Stream<Item = Result<String>> + Send>>> {
+    async fn stream(
+        &self,
+        prompt: &str,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<String>> + Send>>> {
         let payload = serde_json::json!({
             "model": self.model,
             "messages": [
@@ -282,15 +286,13 @@ impl AnthropicAdapter {
                             .map_err(|e| TeriError::Http(e.to_string()));
                     } else if resp.status().is_server_error() && retries < self.max_retries {
                         retries += 1;
-                        tokio::time::sleep(std::time::Duration::from_secs(2_u64.pow(retries))).await;
+                        tokio::time::sleep(std::time::Duration::from_secs(2_u64.pow(retries)))
+                            .await;
                         continue;
                     } else {
                         let status = resp.status();
                         let body = resp.text().await.unwrap_or_default();
-                        return Err(TeriError::Http(format!(
-                            "HTTP {}: {}",
-                            status, body
-                        )));
+                        return Err(TeriError::Http(format!("HTTP {status}: {body}")));
                     }
                 }
                 Err(e) if retries < self.max_retries && e.is_timeout() => {
@@ -330,14 +332,17 @@ impl LlmClient for AnthropicAdapter {
     }
 
     async fn complete_json<T: DeserializeOwned>(&self, prompt: &str) -> Result<T> {
-        let json_prompt = format!("{}\n\nRespond with valid JSON only.", prompt);
+        let json_prompt = format!("{prompt}\n\nRespond with valid JSON only.");
         let response = self.complete(&json_prompt).await?;
-        
+
         serde_json::from_str(&response)
-            .map_err(|e| TeriError::Llm(format!("Failed to parse JSON response: {}", e)))
+            .map_err(|e| TeriError::Llm(format!("Failed to parse JSON response: {e}")))
     }
 
-    async fn stream(&self, prompt: &str) -> Result<Pin<Box<dyn Stream<Item = Result<String>> + Send>>> {
+    async fn stream(
+        &self,
+        prompt: &str,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<String>> + Send>>> {
         // Simplified streaming - for now just return complete response as single chunk
         // TODO: Implement proper SSE streaming with Anthropic's streaming API
         let payload = serde_json::json!({
@@ -476,15 +481,13 @@ impl GeminiAdapter {
                             .map_err(|e| TeriError::Http(e.to_string()));
                     } else if resp.status().is_server_error() && retries < self.max_retries {
                         retries += 1;
-                        tokio::time::sleep(std::time::Duration::from_secs(2_u64.pow(retries))).await;
+                        tokio::time::sleep(std::time::Duration::from_secs(2_u64.pow(retries)))
+                            .await;
                         continue;
                     } else {
                         let status = resp.status();
                         let body = resp.text().await.unwrap_or_default();
-                        return Err(TeriError::Http(format!(
-                            "HTTP {}: {}",
-                            status, body
-                        )));
+                        return Err(TeriError::Http(format!("HTTP {status}: {body}")));
                     }
                 }
                 Err(e) if retries < self.max_retries && e.is_timeout() => {
@@ -524,14 +527,17 @@ impl LlmClient for GeminiAdapter {
     }
 
     async fn complete_json<T: DeserializeOwned>(&self, prompt: &str) -> Result<T> {
-        let json_prompt = format!("{}\n\nRespond with valid JSON only.", prompt);
+        let json_prompt = format!("{prompt}\n\nRespond with valid JSON only.");
         let response = self.complete(&json_prompt).await?;
-        
+
         serde_json::from_str(&response)
-            .map_err(|e| TeriError::Llm(format!("Failed to parse JSON response: {}", e)))
+            .map_err(|e| TeriError::Llm(format!("Failed to parse JSON response: {e}")))
     }
 
-    async fn stream(&self, prompt: &str) -> Result<Pin<Box<dyn Stream<Item = Result<String>> + Send>>> {
+    async fn stream(
+        &self,
+        prompt: &str,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<String>> + Send>>> {
         let payload = serde_json::json!({
             "contents": [{
                 "parts": [{
@@ -627,15 +633,16 @@ mod tests {
     async fn test_openai_adapter_complete() {
         let server = MockServer::start();
         let mock = server.mock(|when, then| {
-            when.method(POST)
-                .path("/chat/completions");
+            when.method(POST).path("/chat/completions");
             then.status(200)
                 .header("Content-Type", "application/json")
-                .body(r#"{
+                .body(
+                    r#"{
                     "choices": [
                         {"message": {"content": "Hello from mock"}}
                     ]
-                }"#);
+                }"#,
+                );
         });
 
         let config = LlmConfig {
@@ -657,13 +664,14 @@ mod tests {
     async fn test_openai_adapter_stream() {
         let server = MockServer::start();
         let mock = server.mock(|when, then| {
-            when.method(POST)
-                .path("/chat/completions");
+            when.method(POST).path("/chat/completions");
             then.status(200)
                 .header("Content-Type", "text/event-stream")
-                .body("data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\
+                .body(
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\
 data: {\"choices\":[{\"delta\":{\"content\":\" world\"}}]}\n\
-data: [DONE]\n");
+data: [DONE]\n",
+                );
         });
 
         let config = LlmConfig {
@@ -689,13 +697,14 @@ data: [DONE]\n");
     async fn test_anthropic_adapter_stream() {
         let server = MockServer::start();
         let mock = server.mock(|when, then| {
-            when.method(POST)
-                .path("/v1/messages");
+            when.method(POST).path("/v1/messages");
             then.status(200)
                 .header("Content-Type", "text/event-stream")
-                .body("data: {\"delta\":{\"text\":\"Hello\"}}\n\
+                .body(
+                    "data: {\"delta\":{\"text\":\"Hello\"}}\n\
 data: {\"delta\":{\"text\":\" Claude\"}}\n\
-data: [DONE]\n");
+data: [DONE]\n",
+                );
         });
 
         let client = AnthropicAdapter::new_with_base(
@@ -716,15 +725,16 @@ data: [DONE]\n");
     #[tokio::test]
     async fn test_gemini_adapter_stream() {
         let server = MockServer::start();
-        let mock = server.mock(|when, then| {
-            when.method(POST)
-                .path("/v1beta/models/gemini-1.5-pro:streamGenerateContent");
-            then.status(200)
+        let mock =
+            server.mock(|when, then| {
+                when.method(POST)
+                    .path("/v1beta/models/gemini-1.5-pro:streamGenerateContent");
+                then.status(200)
                 .header("Content-Type", "text/event-stream")
                 .body("data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"Hello\"}]}}]}\n\
 data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\" Gemini\"}]}}]}\n\
 data: [DONE]\n");
-        });
+            });
 
         let client = GeminiAdapter::new_with_base(
             "AIza-test".to_string(),

@@ -53,8 +53,7 @@ impl Config {
                     .unwrap_or_else(|_| "https://api.openai.com/v1".to_string()),
                 api_key: std::env::var("LLM_API_KEY")
                     .map_err(|_| TeriError::Config("LLM_API_KEY not set".to_string()))?,
-                model: std::env::var("LLM_MODEL")
-                    .unwrap_or_else(|_| "gpt-4o".to_string()),
+                model: std::env::var("LLM_MODEL").unwrap_or_else(|_| "gpt-4o".to_string()),
                 embed_model: std::env::var("EMBED_MODEL")
                     .unwrap_or_else(|_| "text-embedding-3-small".to_string()),
                 timeout_secs: std::env::var("LLM_TIMEOUT_SECS")
@@ -106,7 +105,9 @@ impl Config {
         }
 
         if self.sim.default_agent_count == 0 {
-            return Err(TeriError::Config("DEFAULT_AGENT_COUNT must be > 0".to_string()));
+            return Err(TeriError::Config(
+                "DEFAULT_AGENT_COUNT must be > 0".to_string(),
+            ));
         }
 
         if self.sim.max_ticks == 0 {
