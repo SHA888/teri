@@ -49,3 +49,42 @@ pub enum TeriError {
 }
 
 pub type Result<T> = std::result::Result<T, TeriError>;
+
+// Common conversions
+impl From<reqwest::Error> for TeriError {
+    fn from(err: reqwest::Error) -> Self {
+        TeriError::Http(err.to_string())
+    }
+}
+
+impl From<redb::Error> for TeriError {
+    fn from(err: redb::Error) -> Self {
+        TeriError::Database(err.to_string())
+    }
+}
+
+impl From<bincode::Error> for TeriError {
+    fn from(err: bincode::Error) -> Self {
+        TeriError::Serialization(err.to_string())
+    }
+}
+
+impl From<config::ConfigError> for TeriError {
+    fn from(err: config::ConfigError) -> Self {
+        TeriError::Config(err.to_string())
+    }
+}
+
+// Lightweight context helper
+pub trait ResultExt<T> {
+    fn with_context<F: FnOnce() -> String>(self, ctx: F) -> Result<T>;
+}
+
+impl<T, E> ResultExt<T> for std::result::Result<T, E>
+where
+    E: Into<TeriError>,
+{
+    fn with_context<F: FnOnce() -> String>(self, ctx: F) -> Result<T> {
+        self.map_err(|e| TeriError::Unknown(format!("{}: {}", ctx(), e.into())))
+    }
+}

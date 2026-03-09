@@ -49,16 +49,16 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 - [x] Add example adapters in documentation (Anthropic, llama.cpp)
 
 ### Error Handling
-- [ ] Define custom error types using `thiserror`
-  - [ ] `SeedError`
-  - [ ] `GraphError`
-  - [ ] `AgentError`
-  - [ ] `SimError`
-  - [ ] `MemoryError`
-  - [ ] `ReportError`
-  - [ ] `ApiError`
-- [ ] Create error conversion implementations
-- [ ] Add error context helpers
+- [x] Define custom error types using `thiserror`
+  - [x] `SeedError`
+  - [x] `GraphError`
+  - [x] `AgentError`
+  - [x] `SimError`
+  - [x] `MemoryError`
+  - [x] `ReportError`
+  - [x] `ApiError`
+- [x] Create error conversion implementations
+- [x] Add error context helpers
 
 ---
 
