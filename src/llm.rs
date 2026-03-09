@@ -1,8 +1,8 @@
 use crate::config::LlmConfig;
 use crate::error::{Result, TeriError};
 use async_trait::async_trait;
-use futures::{Stream, TryStreamExt};
-use serde::{de::DeserializeOwned, Serialize};
+use futures::Stream;
+use serde::de::DeserializeOwned;
 use std::pin::Pin;
 
 #[async_trait]

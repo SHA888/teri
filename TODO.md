@@ -10,26 +10,26 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 ## Phase 0: Project Foundation
 
 ### Directory Structure
-- [ ] Create `src/` directory
-- [ ] Move `main.rs` and `lib.rs` into `src/`
-- [ ] Create module subdirectories:
-  - [ ] `src/seed/`
-  - [ ] `src/graph/`
-  - [ ] `src/agent/`
-  - [ ] `src/sim/`
-  - [ ] `src/memory/`
-  - [ ] `src/report/`
-  - [ ] `src/api/`
-- [ ] Create `templates/` directory for prompt templates
-- [ ] Create `examples/` directory with sample seed files
-- [ ] Create `data/` directory for persistent storage
+- [x] Create `src/` directory
+- [x] Move `main.rs` and `lib.rs` into `src/`
+- [x] Create module subdirectories:
+  - [x] `src/seed/`
+  - [x] `src/graph/`
+  - [x] `src/agent/`
+  - [x] `src/sim/`
+  - [x] `src/memory/`
+  - [x] `src/report/`
+  - [x] `src/api/`
+- [x] Create `templates/` directory for prompt templates
+- [x] Create `examples/` directory with sample seed files
+- [x] Create `data/` directory for persistent storage
 
 ### Configuration & Environment
-- [ ] Implement configuration loader using `config` crate
-- [ ] Create `Config` struct with all settings from `.env.example`
-- [ ] Add config validation on startup
-- [ ] Set up `tracing-subscriber` with env-filter
-- [ ] Create logging utilities module
+- [x] Implement configuration loader using `config` crate
+- [x] Create `Config` struct with all settings from `.env.example`
+- [x] Add config validation on startup
+- [x] Set up `tracing-subscriber` with env-filter
+- [x] Create logging utilities module
 
 ### LLM Client Abstraction (Critical Path)
 - [ ] Define `LlmClient` trait in `src/llm.rs`

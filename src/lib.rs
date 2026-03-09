@@ -8,7 +8,9 @@ pub mod memory;
 pub mod report;
 pub mod seed;
 pub mod sim;
+pub mod logging;
 
 pub use config::Config;
 pub use error::{Result, TeriError};
 pub use llm::{LlmClient, OpenAiClient};
+pub use logging::init_logging;

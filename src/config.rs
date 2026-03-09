@@ -1,6 +1,5 @@
 use crate::error::{Result, TeriError};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {

@@ -1,4 +1,3 @@
-use crate::error::Result;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
