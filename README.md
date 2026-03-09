@@ -3,6 +3,8 @@
 > **Rust-native Swarm Intelligence Prediction Engine**
 > A ground-up rewrite of [MiroFish](https://github.com/666ghj/MiroFish) — designed for performance, type safety, and deployment simplicity.
 
+**Name:** “Teri” (Indonesian: *ikan teri*) is the anchovy — one of the smallest fish in the sea, yet one of the most consequential. Anchovies move in vast, tightly coordinated schools: thousands of individuals following simple local rules, producing emergent behavior no single fish planned or directed. That is exactly what this engine does. Seed the world. Spawn the swarm. Watch emergence happen. It’s also a nod to Indonesian waters, where *ikan teri* has fed communities and ecosystems for centuries, punching far above its size.
+
 ---
 
 ## What is Teri?
@@ -26,12 +28,12 @@ Teri turns seed materials (news articles, policy drafts, financial signals, nove
 ## Why Rust?
 
 | Concern | Python (MiroFish) | Teri (Rust) |
-|---|---|---|
+| --- | --- | --- |
 | Agent parallelism | GIL-limited threads | `rayon` true parallelism |
 | Memory per agent | ~MB overhead | Controlled, stack-friendly |
 | Deployment | Docker + venv | Single static binary |
 | Type safety | Runtime errors | Compile-time guarantees |
-| Async LLM calls | asyncio | `tokio` native |
+| Async LLM calls | `asyncio` | `tokio` native |
 
 ---
 
