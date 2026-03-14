@@ -1,0 +1,6 @@
+This is a sample seed text document for Teri integration tests.
+It contains multiple lines to verify plain text ingestion.
+
+- Item 1
+- Item 2
+- Item 3

@@ -75,6 +75,10 @@ chrono = { version = "0.4", features = ["serde"] }
 # Templating (persona/prompt templates)
 minijinja = "1"
 
+# File format support
+pdfium-render = "0.8"
+scraper = "0.19"
+
 [dev-dependencies]
 tokio-test = "0.4"
 pretty_assertions = "1"

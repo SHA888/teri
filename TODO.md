@@ -75,25 +75,25 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 - [x] Implement `SeedIngestor::from_url(url: &str) -> Result<SeedDocument>`
 
 ### File Format Support
-- [ ] **Plain text** - Direct passthrough
-  - [ ] Read file to string
-  - [ ] Extract basic metadata (filename, size, modified date)
-- [ ] **PDF** - Using `pdf-extract` or `lopdf`
-  - [ ] Extract text content
-  - [ ] Handle multi-page documents
-  - [ ] Extract PDF metadata (author, title, etc.)
-- [ ] **Web content** - Using `reqwest` + `scraper`
-  - [ ] Fetch HTML content
-  - [ ] Extract main text (remove nav, ads, etc.)
-  - [ ] Extract metadata (title, description, author)
-- [ ] **JSON** - Structured data
-  - [ ] Parse and normalize to text
-  - [ ] Preserve structure in metadata
+- [x] **Plain text** - Direct passthrough
+  - [x] Read file to string
+  - [x] Extract basic metadata (filename, size, modified date)
+- [x] **PDF** - Using `pdfium-render`
+  - [x] Extract text content
+  - [x] Handle multi-page documents
+  - [x] Extract PDF metadata (page count, file metadata)
+- [x] **Web content** - Using `reqwest` + `scraper`
+  - [x] Fetch HTML content
+  - [x] Extract main text (remove nav, ads, scripts, styles)
+  - [x] Extract metadata (title, description, author)
+- [x] **JSON** - Structured data
+  - [x] Parse and normalize to text
+  - [x] Preserve structure in metadata
 
 ### Testing
-- [ ] Unit tests for each file format
-- [ ] Test error handling (missing files, malformed PDFs, etc.)
-- [ ] Integration test with sample files in `examples/`
+- [x] Unit tests for each file format
+- [x] Test error handling (missing files, malformed PDFs, etc.)
+- [x] Integration test with sample files in `examples/`
 
 ---
 
