@@ -126,8 +126,8 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
   - [x] `get_subgraph(&self, entity_id: Uuid, depth: usize) -> KnowledgeGraph`
 
 ### Serialization
-- [ ] Implement graph serialization to disk (optional feature)
-- [ ] Implement graph deserialization from disk
+- [x] Implement graph serialization to disk (optional feature)
+- [x] Implement graph deserialization from disk
 
 ### Testing
 - [ ] Unit tests for graph construction

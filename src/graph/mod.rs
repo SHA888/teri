@@ -1,6 +1,7 @@
 use crate::error::{Result, TeriError};
 use crate::seed::SeedDocument;
 use petgraph::graph::{Graph, NodeIndex};
+use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -50,6 +51,12 @@ impl Relation {
         }
         Ok(Self { kind, weight })
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SerializableKnowledgeGraph {
+    entities: Vec<Entity>,
+    edges: Vec<(Uuid, Uuid, Relation)>,
 }
 
 #[derive(Debug, Clone)]
@@ -213,6 +220,141 @@ impl KnowledgeGraph {
 
         graph.add_entity(entity)?;
         Ok(graph)
+    }
+
+    // -------- Serialization methods --------
+
+    /// Serializes the knowledge graph to a JSON string.
+    ///
+    /// # Errors
+    /// Returns an error if serialization fails.
+    pub fn serialize_to_json(&self) -> Result<String> {
+        let serializable = SerializableKnowledgeGraph {
+            entities: self.get_all_entities_owned(),
+            edges: self.get_all_edges(),
+        };
+        serde_json::to_string(&serializable)
+            .map_err(|e| TeriError::Graph(format!("Failed to serialize graph: {e}")))
+    }
+
+    /// Serializes the knowledge graph to a JSON file.
+    ///
+    /// # Errors
+    /// Returns an error if serialization or file writing fails.
+    pub fn serialize_to_file(&self, path: &str) -> Result<()> {
+        let json = self.serialize_to_json()?;
+        std::fs::write(path, json)
+            .map_err(|e| TeriError::Graph(format!("Failed to write graph to file: {e}")))
+    }
+
+    /// Serializes the knowledge graph using bincode for compact binary storage.
+    ///
+    /// # Errors
+    /// Returns an error if serialization fails.
+    pub fn serialize_to_bincode(&self) -> Result<Vec<u8>> {
+        let serializable = SerializableKnowledgeGraph {
+            entities: self.get_all_entities_owned(),
+            edges: self.get_all_edges(),
+        };
+        bincode::serialize(&serializable)
+            .map_err(|e| TeriError::Graph(format!("Failed to serialize graph with bincode: {e}")))
+    }
+
+    /// Serializes the knowledge graph to a binary file using bincode.
+    ///
+    /// # Errors
+    /// Returns an error if serialization or file writing fails.
+    pub fn serialize_to_bincode_file(&self, path: &str) -> Result<()> {
+        let bytes = self.serialize_to_bincode()?;
+        std::fs::write(path, bytes)
+            .map_err(|e| TeriError::Graph(format!("Failed to write graph to binary file: {e}")))
+    }
+
+    /// Deserializes a knowledge graph from a JSON string.
+    ///
+    /// # Errors
+    /// Returns an error if deserialization or graph reconstruction fails.
+    pub fn deserialize_from_json(json: &str) -> Result<Self> {
+        let serializable: SerializableKnowledgeGraph = serde_json::from_str(json)
+            .map_err(|e| TeriError::Graph(format!("Failed to deserialize graph from JSON: {e}")))?;
+
+        Self::from_serializable(serializable)
+    }
+
+    /// Deserializes a knowledge graph from a JSON file.
+    ///
+    /// # Errors
+    /// Returns an error if file reading, deserialization, or graph reconstruction fails.
+    pub fn deserialize_from_file(path: &str) -> Result<Self> {
+        let json = std::fs::read_to_string(path)
+            .map_err(|e| TeriError::Graph(format!("Failed to read graph from file: {e}")))?;
+        Self::deserialize_from_json(&json)
+    }
+
+    /// Deserializes a knowledge graph from bincode-encoded bytes.
+    ///
+    /// # Errors
+    /// Returns an error if deserialization or graph reconstruction fails.
+    pub fn deserialize_from_bincode(bytes: &[u8]) -> Result<Self> {
+        let serializable: SerializableKnowledgeGraph =
+            bincode::deserialize(bytes).map_err(|e| {
+                TeriError::Graph(format!("Failed to deserialize graph from bincode: {e}"))
+            })?;
+
+        Self::from_serializable(serializable)
+    }
+
+    /// Deserializes a knowledge graph from a bincode-encoded file.
+    ///
+    /// # Errors
+    /// Returns an error if file reading, deserialization, or graph reconstruction fails.
+    pub fn deserialize_from_bincode_file(path: &str) -> Result<Self> {
+        let bytes = std::fs::read(path)
+            .map_err(|e| TeriError::Graph(format!("Failed to read binary graph file: {e}")))?;
+        Self::deserialize_from_bincode(&bytes)
+    }
+
+    /// Creates a KnowledgeGraph from its serializable representation.
+    ///
+    /// # Errors
+    /// Returns an error if graph reconstruction fails.
+    fn from_serializable(serializable: SerializableKnowledgeGraph) -> Result<Self> {
+        let mut graph = KnowledgeGraph::new();
+
+        // Add all entities first
+        for entity in serializable.entities {
+            graph.add_entity(entity)?;
+        }
+
+        // Then add all edges
+        for (from_id, to_id, relation) in serializable.edges {
+            let from_idx = graph.index_by_id.get(&from_id).ok_or_else(|| {
+                TeriError::Graph(format!("Entity not found during deserialization: {from_id}"))
+            })?;
+            let to_idx = graph.index_by_id.get(&to_id).ok_or_else(|| {
+                TeriError::Graph(format!("Entity not found during deserialization: {to_id}"))
+            })?;
+            graph.add_relation(*from_idx, *to_idx, relation);
+        }
+
+        Ok(graph)
+    }
+
+    /// Helper method to get all entities from the graph.
+    fn get_all_entities_owned(&self) -> Vec<Entity> {
+        self.inner.node_weights().cloned().collect()
+    }
+
+    /// Helper method to get all edges from the graph as (from_id, to_id, relation).
+    fn get_all_edges(&self) -> Vec<(Uuid, Uuid, Relation)> {
+        self.inner
+            .edge_references()
+            .map(|edge| {
+                let from_entity = &self.inner[edge.source()];
+                let to_entity = &self.inner[edge.target()];
+                (from_entity.id, to_entity.id, edge.weight().clone())
+            })
+            .collect()
     }
 
     // -------- LLM prompt helpers --------
@@ -608,6 +750,172 @@ mod tests {
 
         let prompt = KnowledgeGraph::relation_extraction_prompt(&doc, &[]);
         assert_eq!(prompt, "No entities provided for relation extraction.");
+    }
+
+    #[test]
+    fn test_serialize_to_json_and_deserialize() {
+        let mut graph = KnowledgeGraph::new();
+
+        // Add entities
+        let alice =
+            Entity { id: Uuid::new_v4(), name: "Alice".to_string(), kind: EntityKind::Person };
+        let bob = Entity { id: Uuid::new_v4(), name: "Bob".to_string(), kind: EntityKind::Person };
+
+        let alice_idx = graph.add_entity(alice.clone()).expect("Failed to add Alice");
+        let bob_idx = graph.add_entity(bob.clone()).expect("Failed to add Bob");
+
+        // Add relation
+        graph.add_relation(
+            alice_idx,
+            bob_idx,
+            Relation::new(RelationKind::RelatedTo, 0.8).expect("Valid weight"),
+        );
+
+        // Serialize to JSON
+        let json = graph.serialize_to_json().expect("Failed to serialize");
+        assert!(!json.is_empty());
+
+        // Deserialize from JSON
+        let deserialized =
+            KnowledgeGraph::deserialize_from_json(&json).expect("Failed to deserialize");
+
+        // Verify entities
+        let deserialized_alice = deserialized.get_entity("Alice").expect("Alice not found");
+        assert_eq!(deserialized_alice.name, "Alice");
+        assert_eq!(deserialized_alice.kind, EntityKind::Person);
+
+        let deserialized_bob = deserialized.get_entity("Bob").expect("Bob not found");
+        assert_eq!(deserialized_bob.name, "Bob");
+        assert_eq!(deserialized_bob.kind, EntityKind::Person);
+
+        // Verify neighbors
+        let neighbors = deserialized.get_neighbors(alice.id).expect("Failed to get neighbors");
+        assert_eq!(neighbors.len(), 1);
+        assert_eq!(neighbors[0].name, "Bob");
+    }
+
+    #[test]
+    fn test_serialize_to_bincode_and_deserialize() {
+        let mut graph = KnowledgeGraph::new();
+
+        // Add entities
+        let entity1 = Entity {
+            id: Uuid::new_v4(),
+            name: "Entity1".to_string(),
+            kind: EntityKind::Organization,
+        };
+        let entity2 =
+            Entity { id: Uuid::new_v4(), name: "Entity2".to_string(), kind: EntityKind::Location };
+
+        let idx1 = graph.add_entity(entity1).expect("Failed to add entity1");
+        let idx2 = graph.add_entity(entity2).expect("Failed to add entity2");
+
+        // Add relation
+        graph.add_relation(
+            idx1,
+            idx2,
+            Relation::new(RelationKind::LocatedIn, 0.9).expect("Valid weight"),
+        );
+
+        // Serialize to bincode
+        let bytes = graph.serialize_to_bincode().expect("Failed to serialize to bincode");
+        assert!(!bytes.is_empty());
+
+        // Deserialize from bincode
+        let deserialized = KnowledgeGraph::deserialize_from_bincode(&bytes)
+            .expect("Failed to deserialize from bincode");
+
+        // Verify structure
+        assert_eq!(deserialized.entity_count(), 2);
+        assert_eq!(deserialized.relation_count(), 1);
+    }
+
+    #[test]
+    fn test_serialize_to_file_and_deserialize_from_file() {
+        let mut graph = KnowledgeGraph::new();
+
+        // Add test entity
+        let entity = Entity {
+            id: Uuid::new_v4(),
+            name: "TestEntity".to_string(),
+            kind: EntityKind::Concept,
+        };
+        graph.add_entity(entity).expect("Failed to add entity");
+
+        let file_path = "/tmp/test_graph.json";
+
+        // Serialize to file
+        graph.serialize_to_file(file_path).expect("Failed to serialize to file");
+
+        // Deserialize from file
+        let deserialized = KnowledgeGraph::deserialize_from_file(file_path)
+            .expect("Failed to deserialize from file");
+
+        // Verify
+        assert_eq!(deserialized.entity_count(), 1);
+        let test_entity = deserialized.get_entity("TestEntity").expect("TestEntity not found");
+        assert_eq!(test_entity.name, "TestEntity");
+        assert_eq!(test_entity.kind, EntityKind::Concept);
+
+        // Cleanup
+        std::fs::remove_file(file_path).ok();
+    }
+
+    #[test]
+    fn test_serialize_to_bincode_file_and_deserialize_from_bincode_file() {
+        let mut graph = KnowledgeGraph::new();
+
+        // Add test entities and relation
+        let entity1 = Entity {
+            id: Uuid::new_v4(),
+            name: "Company".to_string(),
+            kind: EntityKind::Organization,
+        };
+        let entity2 =
+            Entity { id: Uuid::new_v4(), name: "City".to_string(), kind: EntityKind::Location };
+
+        let idx1 = graph.add_entity(entity1).expect("Failed to add entity1");
+        let idx2 = graph.add_entity(entity2).expect("Failed to add entity2");
+
+        graph.add_relation(
+            idx1,
+            idx2,
+            Relation::new(RelationKind::LocatedIn, 1.0).expect("Valid weight"),
+        );
+
+        let file_path = "/tmp/test_graph.bin";
+
+        // Serialize to binary file
+        graph
+            .serialize_to_bincode_file(file_path)
+            .expect("Failed to serialize to binary file");
+
+        // Deserialize from binary file
+        let deserialized = KnowledgeGraph::deserialize_from_bincode_file(file_path)
+            .expect("Failed to deserialize from binary file");
+
+        // Verify
+        assert_eq!(deserialized.entity_count(), 2);
+        assert_eq!(deserialized.relation_count(), 1);
+
+        // Cleanup
+        std::fs::remove_file(file_path).ok();
+    }
+
+    #[test]
+    fn test_deserialize_invalid_json() {
+        let invalid_json = "{ invalid json }";
+        let result = KnowledgeGraph::deserialize_from_json(invalid_json);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Failed to deserialize"));
+    }
+
+    #[test]
+    fn test_deserialize_invalid_bincode() {
+        let invalid_bytes = b"invalid binary data";
+        let result = KnowledgeGraph::deserialize_from_bincode(invalid_bytes);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Failed to deserialize"));
     }
 
     #[test]
