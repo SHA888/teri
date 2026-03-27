@@ -35,12 +35,7 @@ pub struct WorldState {
 
 impl WorldState {
     pub fn new() -> Self {
-        Self {
-            tick: 0,
-            agents: HashMap::new(),
-            events: Vec::new(),
-            variables: HashMap::new(),
-        }
+        Self { tick: 0, agents: HashMap::new(), events: Vec::new(), variables: HashMap::new() }
     }
 
     pub fn add_agent_snapshot(&mut self, agent_id: Uuid, snapshot: AgentSnapshot) {
@@ -96,10 +91,7 @@ pub struct SimConfig {
 
 impl Default for SimConfig {
     fn default() -> Self {
-        Self {
-            max_ticks: 50,
-            parallelism: 8,
-        }
+        Self { max_ticks: 50, parallelism: 8 }
     }
 }
 
@@ -159,10 +151,7 @@ mod tests {
 
     #[test]
     fn test_sim_engine_creation() {
-        let config = SimConfig {
-            max_ticks: 100,
-            parallelism: 4,
-        };
+        let config = SimConfig { max_ticks: 100, parallelism: 4 };
         let engine = SimEngine::new(config);
         assert_eq!(engine.config().max_ticks, 100);
     }

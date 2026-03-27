@@ -73,10 +73,7 @@ mod tests {
 
     #[test]
     fn test_chat_request() {
-        let req = ChatRequest {
-            message: "Hello".to_string(),
-            agent_id: Some(Uuid::new_v4()),
-        };
+        let req = ChatRequest { message: "Hello".to_string(), agent_id: Some(Uuid::new_v4()) };
 
         assert_eq!(req.message, "Hello");
     }

@@ -66,10 +66,7 @@ impl OpenAiAdapter {
             match response {
                 Ok(resp) => {
                     if resp.status().is_success() {
-                        return resp
-                            .json()
-                            .await
-                            .map_err(|e| TeriError::Http(e.to_string()));
+                        return resp.json().await.map_err(|e| TeriError::Http(e.to_string()));
                     } else if resp.status().is_server_error() && retries < self.max_retries {
                         retries += 1;
                         tokio::time::sleep(std::time::Duration::from_secs(2_u64.pow(retries)))
@@ -204,15 +201,14 @@ impl LlmClient for OpenAiAdapter {
                         return;
                     }
 
-                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
-                        if let Some(content) = json
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(data)
+                        && let Some(content) = json
                             .get("choices")
                             .and_then(|c| c.get(0))
                             .and_then(|c| c.get("delta"))
                             .and_then(|d| d.get("content"))
                             .and_then(|c| c.as_str()) {
                                 yield content.to_string();
-                        }
                     }
                 }
             }
@@ -280,10 +276,7 @@ impl AnthropicAdapter {
             match response {
                 Ok(resp) => {
                     if resp.status().is_success() {
-                        return resp
-                            .json()
-                            .await
-                            .map_err(|e| TeriError::Http(e.to_string()));
+                        return resp.json().await.map_err(|e| TeriError::Http(e.to_string()));
                     } else if resp.status().is_server_error() && retries < self.max_retries {
                         retries += 1;
                         tokio::time::sleep(std::time::Duration::from_secs(2_u64.pow(retries)))
@@ -400,13 +393,12 @@ impl LlmClient for AnthropicAdapter {
                         return;
                     }
 
-                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
-                        if let Some(content) = json
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(data)
+                        && let Some(content) = json
                             .get("delta")
                             .and_then(|d| d.get("text"))
                             .and_then(|t| t.as_str()) {
                                 yield content.to_string();
-                        }
                     }
                 }
             }
@@ -475,10 +467,7 @@ impl GeminiAdapter {
             match response {
                 Ok(resp) => {
                     if resp.status().is_success() {
-                        return resp
-                            .json()
-                            .await
-                            .map_err(|e| TeriError::Http(e.to_string()));
+                        return resp.json().await.map_err(|e| TeriError::Http(e.to_string()));
                     } else if resp.status().is_server_error() && retries < self.max_retries {
                         retries += 1;
                         tokio::time::sleep(std::time::Duration::from_secs(2_u64.pow(retries)))
@@ -590,8 +579,8 @@ impl LlmClient for GeminiAdapter {
                         return;
                     }
 
-                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
-                        if let Some(content) = json
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(data)
+                        && let Some(content) = json
                             .get("candidates")
                             .and_then(|c| c.get(0))
                             .and_then(|c| c.get("content"))
@@ -600,7 +589,6 @@ impl LlmClient for GeminiAdapter {
                             .and_then(|p| p.get("text"))
                             .and_then(|t| t.as_str()) {
                                 yield content.to_string();
-                        }
                     }
                 }
             }
@@ -634,15 +622,13 @@ mod tests {
         let server = MockServer::start();
         let mock = server.mock(|when, then| {
             when.method(POST).path("/chat/completions");
-            then.status(200)
-                .header("Content-Type", "application/json")
-                .body(
-                    r#"{
+            then.status(200).header("Content-Type", "application/json").body(
+                r#"{
                     "choices": [
                         {"message": {"content": "Hello from mock"}}
                     ]
                 }"#,
-                );
+            );
         });
 
         let config = LlmConfig {
@@ -665,13 +651,11 @@ mod tests {
         let server = MockServer::start();
         let mock = server.mock(|when, then| {
             when.method(POST).path("/chat/completions");
-            then.status(200)
-                .header("Content-Type", "text/event-stream")
-                .body(
-                    "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\
+            then.status(200).header("Content-Type", "text/event-stream").body(
+                "data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\
 data: {\"choices\":[{\"delta\":{\"content\":\" world\"}}]}\n\
 data: [DONE]\n",
-                );
+            );
         });
 
         let config = LlmConfig {
@@ -698,13 +682,11 @@ data: [DONE]\n",
         let server = MockServer::start();
         let mock = server.mock(|when, then| {
             when.method(POST).path("/v1/messages");
-            then.status(200)
-                .header("Content-Type", "text/event-stream")
-                .body(
-                    "data: {\"delta\":{\"text\":\"Hello\"}}\n\
+            then.status(200).header("Content-Type", "text/event-stream").body(
+                "data: {\"delta\":{\"text\":\"Hello\"}}\n\
 data: {\"delta\":{\"text\":\" Claude\"}}\n\
 data: [DONE]\n",
-                );
+            );
         });
 
         let client = AnthropicAdapter::new_with_base(
@@ -725,16 +707,14 @@ data: [DONE]\n",
     #[tokio::test]
     async fn test_gemini_adapter_stream() {
         let server = MockServer::start();
-        let mock =
-            server.mock(|when, then| {
-                when.method(POST)
-                    .path("/v1beta/models/gemini-1.5-pro:streamGenerateContent");
-                then.status(200)
-                .header("Content-Type", "text/event-stream")
-                .body("data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"Hello\"}]}}]}\n\
+        let mock = server.mock(|when, then| {
+            when.method(POST).path("/v1beta/models/gemini-1.5-pro:streamGenerateContent");
+            then.status(200).header("Content-Type", "text/event-stream").body(
+                "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"Hello\"}]}}]}\n\
 data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\" Gemini\"}]}}]}\n\
-data: [DONE]\n");
-            });
+data: [DONE]\n",
+            );
+        });
 
         let client = GeminiAdapter::new_with_base(
             "AIza-test".to_string(),

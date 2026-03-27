@@ -220,15 +220,9 @@ mod tests {
             importance: 0.8,
         };
 
-        store
-            .write_ltm(agent_id, &entry)
-            .await
-            .expect("Failed to write LTM");
+        store.write_ltm(agent_id, &entry).await.expect("Failed to write LTM");
 
-        let entries = store
-            .read_ltm(agent_id, 10)
-            .await
-            .expect("Failed to read LTM");
+        let entries = store.read_ltm(agent_id, 10).await.expect("Failed to read LTM");
 
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].content, "Test memory");

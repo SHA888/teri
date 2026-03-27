@@ -105,9 +105,7 @@ impl Config {
         }
 
         if self.sim.default_agent_count == 0 {
-            return Err(TeriError::Config(
-                "DEFAULT_AGENT_COUNT must be > 0".to_string(),
-            ));
+            return Err(TeriError::Config("DEFAULT_AGENT_COUNT must be > 0".to_string()));
         }
 
         if self.sim.max_ticks == 0 {

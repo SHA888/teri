@@ -35,10 +35,7 @@ pub struct AgentMemory {
 
 impl AgentMemory {
     pub fn new(capacity: usize) -> Self {
-        Self {
-            short_term: VecDeque::with_capacity(capacity),
-            short_term_capacity: capacity,
-        }
+        Self { short_term: VecDeque::with_capacity(capacity), short_term_capacity: capacity }
     }
 
     pub fn add_memory(&mut self, entry: MemoryEntry) {
@@ -83,11 +80,7 @@ impl Agent {
     }
 
     pub fn add_memory(&mut self, content: String, importance: f32) {
-        let entry = MemoryEntry {
-            timestamp: Utc::now(),
-            content,
-            importance,
-        };
+        let entry = MemoryEntry { timestamp: Utc::now(), content, importance };
         self.memory.add_memory(entry);
     }
 

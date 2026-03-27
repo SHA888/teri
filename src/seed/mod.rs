@@ -18,11 +18,8 @@ pub struct SeedIngestor;
 impl SeedIngestor {
     pub async fn from_file(path: &str) -> Result<SeedDocument> {
         let path_obj = Path::new(path);
-        let extension = path_obj
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .unwrap_or("")
-            .to_lowercase();
+        let extension =
+            path_obj.extension().and_then(|ext| ext.to_str()).unwrap_or("").to_lowercase();
 
         let (content, mut metadata) = match extension.as_str() {
             "txt" => Self::read_plain_text(path).await?,
@@ -32,19 +29,21 @@ impl SeedIngestor {
         };
 
         metadata.insert("source_path".to_string(), path.to_string());
-        if let Some(filename) = path_obj.file_name() {
-            if let Some(name_str) = filename.to_str() {
-                metadata.insert("filename".to_string(), name_str.to_string());
-            }
+        if let Some(filename) = path_obj.file_name()
+            && let Some(name_str) = filename.to_str()
+        {
+            metadata.insert("filename".to_string(), name_str.to_string());
         }
         metadata.insert("file_format".to_string(), extension);
 
-        Ok(SeedDocument {
-            id: Uuid::new_v4(),
-            raw_text: content,
-            metadata,
-            created_at: Utc::now(),
-        })
+        Ok(
+            SeedDocument {
+                id: Uuid::new_v4(),
+                raw_text: content,
+                metadata,
+                created_at: Utc::now(),
+            },
+        )
     }
 
     pub async fn from_url(url: &str) -> Result<SeedDocument> {
@@ -76,12 +75,14 @@ impl SeedIngestor {
         metadata.insert("source_url".to_string(), url.to_string());
         metadata.insert("content_type".to_string(), content_type);
 
-        Ok(SeedDocument {
-            id: Uuid::new_v4(),
-            raw_text: content,
-            metadata,
-            created_at: Utc::now(),
-        })
+        Ok(
+            SeedDocument {
+                id: Uuid::new_v4(),
+                raw_text: content,
+                metadata,
+                created_at: Utc::now(),
+            },
+        )
     }
 
     async fn read_plain_text(path: &str) -> Result<(String, HashMap<String, String>)> {
@@ -136,10 +137,7 @@ impl SeedIngestor {
 
         let text_content = Self::json_to_text(&json_value);
         let mut metadata = Self::extract_basic_file_metadata(path)?;
-        metadata.insert(
-            "json_structure".to_string(),
-            Self::describe_json_structure(&json_value),
-        );
+        metadata.insert("json_structure".to_string(), Self::describe_json_structure(&json_value));
 
         Ok((text_content, metadata))
     }
@@ -191,26 +189,26 @@ impl SeedIngestor {
 
         let title_selector = Selector::parse("title")
             .map_err(|_| TeriError::Seed("Failed to parse title selector".to_string()))?;
-        if let Some(title_elem) = document.select(&title_selector).next() {
-            if let Some(title_text) = title_elem.inner_html().lines().next() {
-                metadata.insert("title".to_string(), title_text.trim().to_string());
-            }
+        if let Some(title_elem) = document.select(&title_selector).next()
+            && let Some(title_text) = title_elem.inner_html().lines().next()
+        {
+            metadata.insert("title".to_string(), title_text.trim().to_string());
         }
 
         let meta_desc_selector = Selector::parse("meta[name=\"description\"]")
             .map_err(|_| TeriError::Seed("Failed to parse meta selector".to_string()))?;
-        if let Some(meta_elem) = document.select(&meta_desc_selector).next() {
-            if let Some(content) = meta_elem.value().attr("content") {
-                metadata.insert("description".to_string(), content.to_string());
-            }
+        if let Some(meta_elem) = document.select(&meta_desc_selector).next()
+            && let Some(content) = meta_elem.value().attr("content")
+        {
+            metadata.insert("description".to_string(), content.to_string());
         }
 
         let meta_author_selector = Selector::parse("meta[name=\"author\"]")
             .map_err(|_| TeriError::Seed("Failed to parse author selector".to_string()))?;
-        if let Some(meta_elem) = document.select(&meta_author_selector).next() {
-            if let Some(content) = meta_elem.value().attr("content") {
-                metadata.insert("author".to_string(), content.to_string());
-            }
+        if let Some(meta_elem) = document.select(&meta_author_selector).next()
+            && let Some(content) = meta_elem.value().attr("content")
+        {
+            metadata.insert("author".to_string(), content.to_string());
         }
 
         let body_selector = Selector::parse("body")
@@ -250,12 +248,12 @@ impl SeedIngestor {
                 metadata.insert("file_size_bytes".to_string(), size.to_string());
             }
 
-            if let Ok(modified) = file_metadata.modified() {
-                if let Ok(duration) = modified.duration_since(std::time::UNIX_EPOCH) {
-                    let timestamp =
-                        chrono::DateTime::<Utc>::from(std::time::SystemTime::UNIX_EPOCH + duration);
-                    metadata.insert("modified_date".to_string(), timestamp.to_rfc3339());
-                }
+            if let Ok(modified) = file_metadata.modified()
+                && let Ok(duration) = modified.duration_since(std::time::UNIX_EPOCH)
+            {
+                let timestamp =
+                    chrono::DateTime::<Utc>::from(std::time::SystemTime::UNIX_EPOCH + duration);
+                metadata.insert("modified_date".to_string(), timestamp.to_rfc3339());
             }
         }
 
@@ -279,9 +277,7 @@ mod tests {
             .await
             .expect("Failed to write test file");
 
-        let doc = SeedIngestor::from_file(test_file)
-            .await
-            .expect("Failed to ingest seed");
+        let doc = SeedIngestor::from_file(test_file).await.expect("Failed to ingest seed");
 
         assert_eq!(doc.raw_text, test_content);
         assert_eq!(doc.metadata.get("file_format").unwrap(), "txt");
@@ -302,9 +298,7 @@ mod tests {
             .await
             .expect("Failed to write test file");
 
-        let doc = SeedIngestor::from_file(test_file)
-            .await
-            .expect("Failed to ingest seed");
+        let doc = SeedIngestor::from_file(test_file).await.expect("Failed to ingest seed");
 
         assert_eq!(doc.metadata.get("file_format").unwrap(), "json");
         assert!(doc.metadata.contains_key("json_structure"));
@@ -406,9 +400,7 @@ mod tests {
             .await
             .expect("Failed to write test file");
 
-        let doc = SeedIngestor::from_file(test_file)
-            .await
-            .expect("Failed to ingest seed");
+        let doc = SeedIngestor::from_file(test_file).await.expect("Failed to ingest seed");
 
         assert_eq!(doc.raw_text, test_content);
         assert_eq!(doc.metadata.get("file_format").unwrap(), "xyz");
@@ -425,9 +417,7 @@ mod tests {
             .await
             .expect("Failed to write test file");
 
-        let doc = SeedIngestor::from_file(test_file)
-            .await
-            .expect("Failed to ingest seed");
+        let doc = SeedIngestor::from_file(test_file).await.expect("Failed to ingest seed");
 
         assert!(!doc.id.to_string().is_empty());
         assert_eq!(doc.raw_text, test_content);
@@ -488,15 +478,11 @@ mod tests {
     #[tokio::test]
     async fn test_integration_examples() {
         // Plain text
-        let txt = SeedIngestor::from_file("examples/seed.txt")
-            .await
-            .expect("should ingest txt");
+        let txt = SeedIngestor::from_file("examples/seed.txt").await.expect("should ingest txt");
         assert!(txt.raw_text.contains("sample seed text"));
 
         // JSON
-        let json = SeedIngestor::from_file("examples/news.json")
-            .await
-            .expect("should ingest json");
+        let json = SeedIngestor::from_file("examples/news.json").await.expect("should ingest json");
         assert!(json.raw_text.contains("headline"));
         assert!(json.metadata.contains_key("json_structure"));
 
@@ -520,9 +506,7 @@ mod tests {
         let _mock = server
             .mock_async(|when, then| {
                 when.method(GET).path("/article");
-                then.status(200)
-                    .header("content-type", "text/html")
-                    .body(html_body.clone());
+                then.status(200).header("content-type", "text/html").body(html_body.clone());
             })
             .await;
 
@@ -530,13 +514,7 @@ mod tests {
             .await
             .expect("should ingest web html");
         assert!(web.raw_text.contains("Integration Test Article"));
-        assert_eq!(
-            web.metadata.get("title"),
-            Some(&"Example Article".to_string())
-        );
-        assert_eq!(
-            web.metadata.get("author"),
-            Some(&"Integration Bot".to_string())
-        );
+        assert_eq!(web.metadata.get("title"), Some(&"Example Article".to_string()));
+        assert_eq!(web.metadata.get("author"), Some(&"Integration Bot".to_string()));
     }
 }

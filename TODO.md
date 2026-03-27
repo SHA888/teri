@@ -100,30 +100,30 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 ## Phase 2: Graph Module
 
 ### Core Types (`src/graph/mod.rs`)
-- [ ] Define `Entity` struct
-  - [ ] `id: Uuid`
-  - [ ] `name: String`
-  - [ ] `kind: EntityKind` (enum: Person, Organization, Location, Concept, etc.)
-- [ ] Define `Relation` struct
-  - [ ] `kind: RelationKind` (enum: WorksFor, LocatedIn, RelatedTo, etc.)
-  - [ ] `weight: f32`
-- [ ] Define `KnowledgeGraph` struct
-  - [ ] `inner: petgraph::Graph<Entity, Relation>`
-  - [ ] `index: HashMap<String, NodeIndex>`
+- [x] Define `Entity` struct
+  - [x] `id: Uuid`
+  - [x] `name: String`
+  - [x] `kind: EntityKind` (enum: Person, Organization, Location, Concept, etc.)
+- [x] Define `Relation` struct
+  - [x] `kind: RelationKind` (enum: WorksFor, LocatedIn, RelatedTo, etc.)
+  - [x] `weight: f32`
+- [x] Define `KnowledgeGraph` struct
+  - [x] `inner: petgraph::Graph<Entity, Relation>`
+  - [x] `index: HashMap<String, NodeIndex>`
 
-### Graph Construction
-- [ ] Implement `KnowledgeGraph::new() -> Self`
-- [ ] Implement `KnowledgeGraph::build(doc: &SeedDocument, llm: &dyn LlmClient) -> Result<Self>`
-  - [ ] Design LLM prompt for entity extraction
-  - [ ] Parse LLM JSON response into entities
-  - [ ] Design LLM prompt for relation extraction
-  - [ ] Parse LLM JSON response into relations
-  - [ ] Build petgraph from entities and relations
-  - [ ] Create name-to-index mapping
-- [ ] Implement graph query methods
-  - [ ] `get_entity(&self, name: &str) -> Option<&Entity>`
-  - [ ] `get_neighbors(&self, entity_id: Uuid) -> Vec<&Entity>`
-  - [ ] `get_subgraph(&self, entity_id: Uuid, depth: usize) -> KnowledgeGraph`
+-### Graph Construction
+- [x] Implement `KnowledgeGraph::new() -> Self`
+- [x] Implement `KnowledgeGraph::build(doc: &SeedDocument, llm: &dyn LlmClient) -> Result<Self>`
+  - [x] Design LLM prompt for entity extraction
+  - [x] Parse LLM JSON response into entities
+  - [x] Design LLM prompt for relation extraction
+  - [x] Parse LLM JSON response into relations
+  - [x] Build petgraph from entities and relations
+  - [x] Create name-to-index mapping
+- [x] Implement graph query methods
+  - [x] `get_entity(&self, name: &str) -> Option<&Entity>`
+  - [x] `get_neighbors(&self, entity_id: Uuid) -> Vec<&Entity>`
+  - [x] `get_subgraph(&self, entity_id: Uuid, depth: usize) -> KnowledgeGraph`
 
 ### Serialization
 - [ ] Implement graph serialization to disk (optional feature)
