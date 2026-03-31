@@ -507,6 +507,15 @@ Document text:
     pub fn relation_count(&self) -> usize {
         self.inner.edge_count()
     }
+
+    /// Get the name-to-index mapping (primarily for testing)
+    ///
+    /// # Note
+    /// This is primarily intended for testing purposes.
+    /// In production code, prefer using the public query methods.
+    pub fn get_index(&self) -> &HashMap<String, NodeIndex> {
+        &self.index
+    }
 }
 
 impl Default for KnowledgeGraph {
@@ -518,8 +527,11 @@ impl Default for KnowledgeGraph {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::llm::LlmClient;
+    use async_trait::async_trait;
     use chrono::Utc;
     use std::collections::HashMap;
+    use std::pin::Pin;
 
     #[test]
     fn test_knowledge_graph_creation() {
@@ -1000,5 +1012,263 @@ mod tests {
         // Note: Testing the actual overflow would require creating 1000+ entities
         // which is impractical in a unit test. The overflow protection is
         // verified by the logic itself.
+    }
+
+    // ===== Mock LLM Client for Testing =====
+
+    struct MockLlmClient {
+        entity_response: String,
+        relation_response: String,
+    }
+
+    impl MockLlmClient {
+        fn new(entity_response: &str, relation_response: &str) -> Self {
+            Self {
+                entity_response: entity_response.to_string(),
+                relation_response: relation_response.to_string(),
+            }
+        }
+    }
+
+    #[async_trait]
+    impl LlmClient for MockLlmClient {
+        async fn complete(&self, prompt: &str) -> Result<String> {
+            if prompt.contains("Extract named entities") {
+                Ok(self.entity_response.clone())
+            } else if prompt.contains("extract relations") {
+                Ok(self.relation_response.clone())
+            } else {
+                Err(TeriError::Llm("Unexpected prompt for mock".to_string()))
+            }
+        }
+
+        async fn complete_json<T: serde::de::DeserializeOwned>(&self, prompt: &str) -> Result<T> {
+            let response = self.complete(prompt).await?;
+            serde_json::from_str(&response)
+                .map_err(|e| TeriError::Llm(format!("JSON parsing error: {}", e)))
+        }
+
+        async fn stream(
+            &self,
+            _prompt: &str,
+        ) -> Result<Pin<Box<dyn futures::Stream<Item = Result<String>> + Send>>> {
+            Err(TeriError::Llm("Streaming not implemented in mock".to_string()))
+        }
+    }
+
+    // ===== Entity/Relation Extraction Tests =====
+
+    #[tokio::test]
+    async fn test_entity_extraction_with_mock_llm() {
+        let mock_response = r#"[
+            {"name": "Alice", "kind": "Person"},
+            {"name": "Acme Corp", "kind": "Organization"},
+            {"name": "New York", "kind": "Location"}
+        ]"#;
+
+        let mock_llm = MockLlmClient::new(mock_response, "");
+
+        let mut metadata = HashMap::new();
+        metadata.insert("title".to_string(), "Test Document".to_string());
+        let doc = SeedDocument {
+            id: Uuid::new_v4(),
+            raw_text: "Alice works at Acme Corp in New York.".to_string(),
+            metadata,
+            created_at: Utc::now(),
+        };
+
+        let prompt = KnowledgeGraph::entity_extraction_prompt(&doc);
+        let response = mock_llm.complete(&prompt).await.expect("Failed to get response");
+        let entities =
+            KnowledgeGraph::parse_entities_json(&response).expect("Failed to parse entities");
+
+        assert_eq!(entities.len(), 3);
+        assert_eq!(entities[0].name, "Alice");
+        assert_eq!(entities[0].kind, EntityKind::Person);
+        assert_eq!(entities[1].name, "Acme Corp");
+        assert_eq!(entities[1].kind, EntityKind::Organization);
+        assert_eq!(entities[2].name, "New York");
+        assert_eq!(entities[2].kind, EntityKind::Location);
+    }
+
+    #[tokio::test]
+    async fn test_relation_extraction_with_mock_llm() {
+        let mock_response = r#"[
+            {"from": "Alice", "to": "Acme Corp", "kind": "WorksFor", "weight": 0.9},
+            {"from": "Acme Corp", "to": "New York", "kind": "LocatedIn", "weight": 0.8}
+        ]"#;
+
+        let mock_llm = MockLlmClient::new("", mock_response);
+
+        let mut metadata = HashMap::new();
+        metadata.insert("title".to_string(), "Test Document".to_string());
+        let doc = SeedDocument {
+            id: Uuid::new_v4(),
+            raw_text: "Alice works at Acme Corp in New York.".to_string(),
+            metadata,
+            created_at: Utc::now(),
+        };
+
+        let entities = vec![
+            Entity { id: Uuid::new_v4(), name: "Alice".to_string(), kind: EntityKind::Person },
+            Entity {
+                id: Uuid::new_v4(),
+                name: "Acme Corp".to_string(),
+                kind: EntityKind::Organization,
+            },
+            Entity { id: Uuid::new_v4(), name: "New York".to_string(), kind: EntityKind::Location },
+        ];
+
+        let prompt = KnowledgeGraph::relation_extraction_prompt(&doc, &entities);
+        let response = mock_llm.complete(&prompt).await.expect("Failed to get response");
+
+        // Create a mock index for relation parsing
+        let mut index = HashMap::new();
+        let mut graph = KnowledgeGraph::new();
+        for entity in &entities {
+            let idx = graph.add_entity(entity.clone()).expect("Failed to add entity");
+            index.insert(entity.name.clone(), idx);
+        }
+
+        let relations = KnowledgeGraph::parse_relations_json(&response, &index)
+            .expect("Failed to parse relations");
+
+        assert_eq!(relations.len(), 2);
+        assert_eq!(relations[0].2.kind, RelationKind::WorksFor);
+        assert_eq!(relations[0].2.weight, 0.9);
+        assert_eq!(relations[1].2.kind, RelationKind::LocatedIn);
+        assert_eq!(relations[1].2.weight, 0.8);
+    }
+
+    #[tokio::test]
+    async fn test_graph_construction_with_mock_llm() {
+        let entity_response = r#"[
+            {"name": "Alice", "kind": "Person"},
+            {"name": "Bob", "kind": "Person"}
+        ]"#;
+
+        let relation_response = r#"[
+            {"from": "Alice", "to": "Bob", "kind": "RelatedTo", "weight": 0.7}
+        ]"#;
+
+        let mock_llm = MockLlmClient::new(entity_response, relation_response);
+
+        let mut metadata = HashMap::new();
+        metadata.insert("title".to_string(), "Test Document".to_string());
+        let doc = SeedDocument {
+            id: Uuid::new_v4(),
+            raw_text: "Alice and Bob are colleagues.".to_string(),
+            metadata,
+            created_at: Utc::now(),
+        };
+
+        // Extract entities
+        let entity_prompt = KnowledgeGraph::entity_extraction_prompt(&doc);
+        let entity_response =
+            mock_llm.complete(&entity_prompt).await.expect("Failed to get entities");
+        let entities = KnowledgeGraph::parse_entities_json(&entity_response)
+            .expect("Failed to parse entities");
+
+        // Build graph with entities
+        let mut graph = KnowledgeGraph::new();
+        let mut entity_map = HashMap::new();
+
+        for entity in entities {
+            let idx = graph.add_entity(entity.clone()).expect("Failed to add entity");
+            entity_map.insert(entity.name, idx);
+        }
+
+        // Extract relations
+        let entities: Vec<Entity> = graph.get_all_entities().into_iter().cloned().collect();
+        let relation_prompt = KnowledgeGraph::relation_extraction_prompt(&doc, &entities);
+        let relation_response =
+            mock_llm.complete(&relation_prompt).await.expect("Failed to get relations");
+        let relations = KnowledgeGraph::parse_relations_json(&relation_response, &graph.index)
+            .expect("Failed to parse relations");
+
+        // Add relations to graph
+        for (from_idx, to_idx, relation) in relations {
+            graph.add_relation(from_idx, to_idx, relation);
+        }
+
+        // Verify graph structure
+        assert_eq!(graph.entity_count(), 2);
+        assert_eq!(graph.relation_count(), 1);
+
+        let alice = graph.get_entity("Alice").expect("Alice not found");
+        assert_eq!(alice.kind, EntityKind::Person);
+
+        let neighbors = graph.get_neighbors(alice.id).expect("Failed to get neighbors");
+        assert_eq!(neighbors.len(), 1);
+        assert_eq!(neighbors[0].name, "Bob");
+    }
+
+    // ===== Additional Graph Query Method Tests =====
+
+    #[test]
+    fn test_get_entity_case_sensitivity() {
+        let mut graph = KnowledgeGraph::new();
+        let alice_lower =
+            Entity { id: Uuid::new_v4(), name: "alice".to_string(), kind: EntityKind::Person };
+        let alice_upper =
+            Entity { id: Uuid::new_v4(), name: "Alice".to_string(), kind: EntityKind::Person };
+
+        graph.add_entity(alice_lower).expect("Failed to add alice");
+        graph.add_entity(alice_upper).expect("Failed to add Alice");
+
+        // Names are case-sensitive
+        let lower_result = graph.get_entity("alice");
+        let upper_result = graph.get_entity("Alice");
+
+        assert!(lower_result.is_some());
+        assert!(upper_result.is_some());
+        assert_ne!(lower_result.unwrap().id, upper_result.unwrap().id);
+    }
+
+    #[test]
+    fn test_get_neighbors_nonexistent_entity() {
+        let graph = KnowledgeGraph::new();
+        let nonexistent_id = Uuid::new_v4();
+        let result = graph.get_neighbors(nonexistent_id);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Entity not found"));
+    }
+
+    #[test]
+    fn test_get_subgraph_nonexistent_entity() {
+        let graph = KnowledgeGraph::new();
+        let nonexistent_id = Uuid::new_v4();
+        let result = graph.get_subgraph(nonexistent_id, 2);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Entity not found"));
+    }
+
+    #[test]
+    fn test_get_subgraph_depth_zero() {
+        let mut graph = KnowledgeGraph::new();
+        let entity_id = Uuid::new_v4();
+        let entity =
+            Entity { id: entity_id, name: "Central".to_string(), kind: EntityKind::Concept };
+        graph.add_entity(entity).expect("Failed to add entity");
+
+        let subgraph = graph.get_subgraph(entity_id, 0).expect("Failed to get subgraph");
+        assert_eq!(subgraph.entity_count(), 1);
+    }
+
+    #[test]
+    fn test_get_subgraph_isolated_entity() {
+        let mut graph = KnowledgeGraph::new();
+        let isolated_id = Uuid::new_v4();
+        let isolated =
+            Entity { id: isolated_id, name: "Isolated".to_string(), kind: EntityKind::Concept };
+        let other_id = Uuid::new_v4();
+        let other = Entity { id: other_id, name: "Other".to_string(), kind: EntityKind::Concept };
+
+        graph.add_entity(isolated).expect("Failed to add isolated");
+        graph.add_entity(other).expect("Failed to add other");
+        // Don't add any relations
+
+        let subgraph = graph.get_subgraph(isolated_id, 5).expect("Failed to get subgraph");
+        assert_eq!(subgraph.entity_count(), 1); // Only the isolated entity
     }
 }

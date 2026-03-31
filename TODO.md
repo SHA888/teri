@@ -130,10 +130,10 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 - [x] Implement graph deserialization from disk
 
 ### Testing
-- [ ] Unit tests for graph construction
-- [ ] Test entity/relation extraction with mock LLM
-- [ ] Test graph query methods
-- [ ] Integration test with real seed document
+- [x] Unit tests for graph construction
+- [x] Test entity/relation extraction with mock LLM
+- [x] Test graph query methods
+- [x] Integration test with real seed document
 
 ---
 
