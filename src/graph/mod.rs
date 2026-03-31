@@ -5,6 +5,7 @@ use petgraph::visit::EdgeRef;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::fmt;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -15,6 +16,19 @@ pub enum EntityKind {
     Concept,
     Event,
     Other,
+}
+
+impl fmt::Display for EntityKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EntityKind::Person => write!(f, "person"),
+            EntityKind::Organization => write!(f, "organization"),
+            EntityKind::Location => write!(f, "location"),
+            EntityKind::Concept => write!(f, "concept"),
+            EntityKind::Event => write!(f, "event"),
+            EntityKind::Other => write!(f, "other"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -513,6 +527,7 @@ Document text:
     /// # Note
     /// This is primarily intended for testing purposes.
     /// In production code, prefer using the public query methods.
+    #[doc(hidden)]
     pub fn get_index(&self) -> &HashMap<String, NodeIndex> {
         &self.index
     }

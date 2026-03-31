@@ -140,43 +140,43 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 ## Phase 3: Agent Module
 
 ### Core Types (`src/agent/mod.rs`)
-- [ ] Define `Persona` struct
-  - [ ] `name: String`
-  - [ ] `background: String`
-  - [ ] `traits: Vec<String>`
-  - [ ] `role: String`
-- [ ] Define `AgentState` enum (Idle, Thinking, Acting, etc.)
-- [ ] Define `MemoryEntry` struct
-  - [ ] `timestamp: DateTime<Utc>`
-  - [ ] `content: String`
-  - [ ] `importance: f32`
-- [ ] Define `AgentMemory` struct
-  - [ ] `short_term: VecDeque<MemoryEntry>` (capped at N entries)
-  - [ ] `long_term_db: Arc<RocksDB>` (reference to shared DB)
-- [ ] Define `Agent` struct
-  - [ ] `id: Uuid`
-  - [ ] `persona: Persona`
-  - [ ] `memory: AgentMemory`
-  - [ ] `state: AgentState`
+- [x] Define `Persona` struct
+  - [x] `name: String`
+  - [x] `background: String`
+  - [x] `traits: Vec<String>`
+  - [x] `role: String`
+- [x] Define `AgentState` enum (Idle, Thinking, Acting, etc.)
+- [x] Define `MemoryEntry` struct
+  - [x] `timestamp: DateTime<Utc>`
+  - [x] `content: String`
+  - [x] `importance: f32`
+- [x] Define `AgentMemory` struct
+  - [x] `short_term: VecDeque<MemoryEntry>` (capped at N entries)
+  - [x] `long_term_db: Arc<RocksDB>` (reference to shared DB)
+- [x] Define `Agent` struct
+  - [x] `id: Uuid`
+  - [x] `persona: Persona`
+  - [x] `memory: AgentMemory`
+  - [x] `state: AgentState`
 
 ### Persona Generation
-- [ ] Create persona template in `templates/persona_gen.jinja`
-- [ ] Implement `PersonaGenerator` struct
-- [ ] Implement `PersonaGenerator::generate(graph: &KnowledgeGraph, llm: &dyn LlmClient) -> Result<Persona>`
-  - [ ] Sample entity from graph as role anchor
-  - [ ] Generate persona using LLM with template
-  - [ ] Parse and validate persona
+- [x] Create persona template in `templates/persona_gen.jinja`
+- [x] Implement `PersonaGenerator` struct
+- [x] Implement `PersonaGenerator::generate(graph: &KnowledgeGraph, llm: &dyn LlmClient) -> Result<Persona>`
+  - [x] Sample entity from graph as role anchor
+  - [x] Generate persona using LLM with template
+  - [x] Parse and validate persona
 
 ### Agent Pool
-- [ ] Define `AgentPool` struct
-  - [ ] `agents: Vec<Agent>`
-  - [ ] `group_memory: Arc<RwLock<Vec<MemoryEntry>>>`
-- [ ] Implement `AgentPool::spawn(n: usize, graph: &KnowledgeGraph, llm: &dyn LlmClient) -> Result<Self>`
-  - [ ] Generate N unique personas
-  - [ ] Initialize agent memory
-  - [ ] Create shared group memory
-- [ ] Implement `AgentPool::get(&self, id: Uuid) -> Option<&Agent>`
-- [ ] Implement `AgentPool::get_mut(&mut self, id: Uuid) -> Option<&mut Agent>`
+- [x] Define `AgentPool` struct
+  - [x] `agents: Vec<Agent>`
+  - [x] `group_memory: Arc<RwLock<Vec<MemoryEntry>>>`
+- [x] Implement `AgentPool::spawn(n: usize, graph: &KnowledgeGraph, llm: &dyn LlmClient) -> Result<Self>`
+  - [x] Generate N unique personas
+  - [x] Initialize agent memory
+  - [x] Create shared group memory
+- [x] Implement `AgentPool::get(&self, id: Uuid) -> Option<&Agent>`
+- [x] Implement `AgentPool::get_mut(&mut self, id: Uuid) -> Option<&mut Agent>`
 
 ### Agent Actions
 - [ ] Define `Action` enum (Speak, Move, Interact, Observe, etc.)
