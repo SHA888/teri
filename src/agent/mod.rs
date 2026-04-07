@@ -1,7 +1,9 @@
 use crate::error::{Result, TeriError};
 use crate::graph::{Entity, KnowledgeGraph};
 use crate::llm::LlmClient;
+use crate::sim::{Action, WorldState};
 use chrono::Utc;
+use minijinja::{Environment, context};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::Arc;
@@ -91,6 +93,156 @@ impl Agent {
 
     pub fn set_state(&mut self, state: AgentState) {
         self.state = state;
+    }
+
+    /// Execute one step of the agent's decision-making process
+    pub async fn step<L: LlmClient>(&mut self, world: &WorldState, llm: &L) -> Result<Action> {
+        // Set state to Thinking
+        self.set_state(AgentState::Thinking);
+
+        // Retrieve relevant memories
+        let relevant_memories = self.retrieve_relevant_memories(world);
+
+        // Construct context from world state + memories
+        let context = self.construct_context(world, &relevant_memories);
+
+        // Set state to Acting
+        self.set_state(AgentState::Acting);
+
+        // Generate action using LLM with fallback
+        let action = self.generate_action_with_fallback(&context, llm).await?;
+
+        // Parse and validate action
+        let validated_action = self.parse_and_validate_action(&action)?;
+
+        // Store action in memory
+        self.store_action_in_memory(&validated_action);
+
+        // Return to Idle state
+        self.set_state(AgentState::Idle);
+
+        Ok(validated_action)
+    }
+
+    /// Retrieve relevant memories based on current world state
+    fn retrieve_relevant_memories(&self, _world: &WorldState) -> Vec<&MemoryEntry> {
+        // Get recent memories (simple implementation - could be enhanced with relevance scoring)
+        self.memory.get_recent(10)
+    }
+
+    /// Construct context string from world state and memories
+    fn construct_context(&self, world: &WorldState, memories: &[&MemoryEntry]) -> String {
+        let mut context = format!(
+            "Agent: {}\nRole: {}\nState: {:?}\n\n",
+            self.persona.name, self.persona.role, self.state
+        );
+
+        context.push_str(&format!("World Tick: {}\n\n", world.tick));
+
+        // Add recent events with agent names
+        if !world.events.is_empty() {
+            context.push_str("Recent Events:\n");
+            for event in world.events.iter().rev().take(5) {
+                let agent_name = world
+                    .agents
+                    .get(&event.agent_id)
+                    .map(|snapshot| snapshot.name.as_str())
+                    .unwrap_or("Unknown Agent");
+                context.push_str(&format!("- {}: {}\n", agent_name, event.action));
+            }
+            context.push('\n');
+        }
+
+        // Add memories
+        if !memories.is_empty() {
+            context.push_str("Relevant Memories:\n");
+            for memory in memories {
+                context.push_str(&format!("- {}\n", memory.content));
+            }
+            context.push('\n');
+        }
+
+        // Add world variables
+        if !world.variables.is_empty() {
+            context.push_str("World State:\n");
+            for (key, value) in &world.variables {
+                context.push_str(&format!("- {}: {:.2}\n", key, value));
+            }
+        }
+
+        context
+    }
+
+    /// Generate action using LLM with context and fallback
+    async fn generate_action_with_fallback<L: LlmClient>(
+        &self,
+        context: &str,
+        llm: &L,
+    ) -> Result<String> {
+        // Try to generate action
+        match self.generate_action(context, llm).await {
+            Ok(action) => Ok(action),
+            Err(_) => {
+                // Fallback to a simple thinking action
+                Ok("Think(I need to consider my next move carefully)".to_string())
+            }
+        }
+    }
+
+    /// Generate action using LLM with context
+    async fn generate_action<L: LlmClient>(&self, context: &str, llm: &L) -> Result<String> {
+        let generator = ActionGenerator::new();
+        let prompt = generator.generate_prompt(self, context)?;
+
+        llm.complete(&prompt).await
+    }
+
+    /// Parse and validate the action string with robust parsing
+    fn parse_and_validate_action(&self, action_str: &str) -> Result<Action> {
+        let action_str = action_str.trim();
+
+        // Find the first '(' and the last ')' to handle nested parentheses
+        if let Some(paren_start) = action_str.find('(')
+            && let Some(paren_end) = action_str.rfind(')')
+            && paren_end > paren_start
+        {
+            let action_type = &action_str[..paren_start];
+            let content = &action_str[paren_start + 1..paren_end];
+
+            return match action_type.trim() {
+                "Speak" => Ok(Action::Speak(content.trim().to_string())),
+                "Move" => Ok(Action::Move(content.trim().to_string())),
+                "Interact" => Ok(Action::Interact(content.trim().to_string())),
+                "Observe" => Ok(Action::Observe(content.trim().to_string())),
+                "Think" => Ok(Action::Think(content.trim().to_string())),
+                _ => Err(TeriError::Agent(format!("Unknown action type: {}", action_type))),
+            };
+        }
+
+        Err(TeriError::Agent(format!("Invalid action format: {}", action_str)))
+    }
+
+    /// Store the executed action in memory with dynamic importance
+    fn store_action_in_memory(&mut self, action: &Action) {
+        let (memory_content, importance) = match action {
+            Action::Speak(content) => {
+                let importance = if content.len() > 100 { 0.8 } else { 0.6 };
+                (format!("Spoke: {}", content), importance)
+            }
+            Action::Move(location) => (format!("Moved to: {}", location), 0.7),
+            Action::Interact(target) => (format!("Interacted with: {}", target), 0.8),
+            Action::Observe(target) => (format!("Observed: {}", target), 0.5),
+            Action::Think(content) => {
+                let importance = if content.contains("plan") || content.contains("strategy") {
+                    0.9
+                } else {
+                    0.4
+                };
+                (format!("Thought: {}", content), importance)
+            }
+        };
+
+        self.add_memory(memory_content, importance);
     }
 }
 
@@ -353,6 +505,140 @@ impl PersonaGenerator {
 }
 
 impl Default for PersonaGenerator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Generates action prompts based on agent context and world state
+pub struct ActionGenerator {
+    template: String,
+}
+
+impl ActionGenerator {
+    /// Create a new ActionGenerator with the default embedded template
+    pub fn new() -> Self {
+        let template = include_str!("../../templates/agent_action.jinja").to_string();
+        Self { template }
+    }
+
+    /// Create a new ActionGenerator with a custom template from file
+    /// Falls back to embedded template if file loading fails
+    pub fn from_file<P: AsRef<std::path::Path>>(template_path: P) -> Self {
+        match std::fs::read_to_string(template_path) {
+            Ok(template) => Self { template },
+            Err(e) => {
+                eprintln!(
+                    "Warning: Failed to load action template from file ({}), falling back to embedded template",
+                    e
+                );
+                Self::new()
+            }
+        }
+    }
+
+    /// Generate a prompt for action generation based on agent and context
+    pub fn generate_prompt(&self, agent: &Agent, context: &str) -> Result<String> {
+        let env = Environment::new();
+
+        // Parse recent events from context
+        let recent_events = self.parse_recent_events(context);
+        let relevant_memories = self.parse_relevant_memories(context);
+        let world_variables = self.parse_world_variables(context);
+        let world_tick = self.parse_world_tick(context);
+
+        let template_context = context! {
+            agent_name => &agent.persona.name,
+            agent_role => &agent.persona.role,
+            agent_state => format!("{:?}", agent.state),
+            agent_background => &agent.persona.background,
+            agent_traits => &agent.persona.traits,
+            world_tick => world_tick,
+            recent_events => recent_events,
+            relevant_memories => relevant_memories,
+            world_variables => world_variables,
+        };
+
+        let prompt = env
+            .template_from_str(&self.template)
+            .map_err(|e| TeriError::Agent(format!("Template parsing error: {}", e)))?
+            .render(template_context)
+            .map_err(|e| TeriError::Agent(format!("Template rendering error: {}", e)))?;
+
+        Ok(prompt)
+    }
+
+    /// Parse recent events from context string
+    fn parse_recent_events(&self, context: &str) -> Vec<String> {
+        let mut events = Vec::new();
+        if let Some(events_start) = context.find("Recent Events:")
+            && let Some(events_end) = context[events_start..].find("\n\n")
+        {
+            let events_section = &context[events_start + 14..events_start + events_end];
+            for line in events_section.lines() {
+                if let Some(content) = line.strip_prefix("- ") {
+                    events.push(content.to_string());
+                }
+            }
+        }
+        events
+    }
+
+    /// Parse relevant memories from context string
+    fn parse_relevant_memories(&self, context: &str) -> Vec<MemoryEntry> {
+        let mut memories = Vec::new();
+        if let Some(memories_start) = context.find("Relevant Memories:")
+            && let Some(memories_end) = context[memories_start..].find("\n\n")
+        {
+            let memories_section = &context[memories_start + 19..memories_start + memories_end];
+            for line in memories_section.lines() {
+                if let Some(content) = line.strip_prefix("- ") {
+                    memories.push(MemoryEntry {
+                        timestamp: Utc::now(),
+                        content: content.to_string(),
+                        importance: 0.7,
+                    });
+                }
+            }
+        }
+        memories
+    }
+
+    /// Parse world variables from context string
+    fn parse_world_variables(&self, context: &str) -> std::collections::HashMap<String, f32> {
+        let mut variables = std::collections::HashMap::new();
+        if let Some(vars_start) = context.find("World State:")
+            && let Some(vars_end) = context[vars_start..].find("\n\n")
+        {
+            let vars_section = &context[vars_start + 12..vars_start + vars_end];
+            for line in vars_section.lines() {
+                if let Some(line_content) = line.strip_prefix("- ")
+                    && let Some(colon_pos) = line_content.find(':')
+                {
+                    let key = line_content[..colon_pos].trim().to_string();
+                    let value_str = line_content[colon_pos + 1..].trim();
+                    if let Ok(value) = value_str.parse::<f32>() {
+                        variables.insert(key, value);
+                    }
+                }
+            }
+        }
+        variables
+    }
+
+    /// Parse world tick from context string
+    fn parse_world_tick(&self, context: &str) -> u32 {
+        if let Some(tick_start) = context.find("World Tick: ")
+            && let Some(tick_end) = context[tick_start + 12..].find('\n')
+        {
+            let tick_str = &context[tick_start + 12..tick_start + 12 + tick_end];
+            return tick_str.parse().unwrap_or(0);
+        }
+        0
+    }
+}
+
+impl Default for ActionGenerator {
     fn default() -> Self {
         Self::new()
     }

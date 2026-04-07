@@ -179,14 +179,14 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 - [x] Implement `AgentPool::get_mut(&mut self, id: Uuid) -> Option<&mut Agent>`
 
 ### Agent Actions
-- [ ] Define `Action` enum (Speak, Move, Interact, Observe, etc.)
-- [ ] Create action template in `templates/agent_action.jinja`
-- [ ] Implement `Agent::step(&mut self, world: &WorldState, llm: &dyn LlmClient) -> Result<Action>`
-  - [ ] Retrieve relevant memories
-  - [ ] Construct context from world state + memories
-  - [ ] Generate action using LLM
-  - [ ] Parse and validate action
-  - [ ] Store action in memory
+- [x] Define `Action` enum (Speak, Move, Interact, Observe, etc.)
+- [x] Create action template in `templates/agent_action.jinja`
+- [x] Implement `Agent::step(&mut self, world: &WorldState, llm: &dyn LlmClient) -> Result<Action>`
+  - [x] Retrieve relevant memories
+  - [x] Construct context from world state + memories
+  - [x] Generate action using LLM
+  - [x] Parse and validate action
+  - [x] Store action in memory
 
 ### Testing
 - [ ] Unit tests for persona generation

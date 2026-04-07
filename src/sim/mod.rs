@@ -11,6 +11,18 @@ pub enum Action {
     Think(String),
 }
 
+impl std::fmt::Display for Action {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Action::Speak(content) => write!(f, "Spoke: {}", content),
+            Action::Move(location) => write!(f, "Moved to: {}", location),
+            Action::Interact(target) => write!(f, "Interacted with: {}", target),
+            Action::Observe(target) => write!(f, "Observed: {}", target),
+            Action::Think(content) => write!(f, "Thought: {}", content),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Event {
     pub agent_id: Uuid,
