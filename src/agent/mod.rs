@@ -434,12 +434,19 @@ impl PersonaGenerator {
         // Sanitize entity name to prevent template injection
         let sanitized_name = self.sanitize_entity_name(&entity.name);
 
-        // Render the template
-        let prompt = self
-            .template
-            .replace("{{ entity_name }}", &sanitized_name)
-            .replace("{{ entity_kind }}", &entity.kind.to_string())
-            .replace("{{ entity_description }}", &entity_description);
+        // Render the template using minijinja
+        let env = Environment::new();
+        let template_context = context! {
+            entity_name => sanitized_name,
+            entity_kind => entity.kind.to_string(),
+            entity_description => entity_description,
+        };
+
+        let prompt = env
+            .template_from_str(&self.template)
+            .map_err(|e| TeriError::Agent(format!("Template parsing error: {}", e)))?
+            .render(template_context)
+            .map_err(|e| TeriError::Agent(format!("Template rendering error: {}", e)))?;
 
         // Generate persona using LLM
         let response = llm.complete(&prompt).await?;
