@@ -189,11 +189,11 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
   - [x] Store action in memory
 
 ### Testing
-- [ ] Unit tests for persona generation
-- [ ] Unit tests for agent memory operations
-- [ ] Unit tests for agent action generation
-- [ ] Test agent pool spawning
-- [ ] Integration test with mock world state
+- [x] Unit tests for persona generation
+- [x] Unit tests for agent memory operations
+- [x] Unit tests for agent action generation
+- [x] Test agent pool spawning
+- [x] Integration test with mock world state
 
 ---
 

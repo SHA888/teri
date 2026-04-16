@@ -339,13 +339,28 @@ impl AgentPool {
                 attempts += 1;
                 if attempts >= max_attempts {
                     // If we can't generate a unique persona after several attempts,
-                    // create a variation by adding a suffix
-                    let mut varied_persona = persona.clone();
-                    varied_persona.name = format!("{} {}", varied_persona.name, attempts);
-                    let varied_id = format!("{}|{}", varied_persona.name, varied_persona.role);
-                    generated_personas.insert(varied_id);
-                    let agent = Agent::new(varied_persona);
-                    pool.add_agent(agent);
+                    // create a variation by adding an incrementing suffix until unique
+                    let base_name = persona.name.clone();
+                    let mut suffix = attempts;
+                    loop {
+                        let mut varied_persona = persona.clone();
+                        varied_persona.name = format!("{} {}", base_name, suffix);
+                        let varied_id = format!("{}|{}", varied_persona.name, varied_persona.role);
+                        if !generated_personas.contains(&varied_id) {
+                            generated_personas.insert(varied_id);
+                            let agent = Agent::new(varied_persona);
+                            pool.add_agent(agent);
+                            break;
+                        }
+                        suffix += 1;
+                        // Safety limit to prevent infinite loops
+                        if suffix > 100 {
+                            return Err(TeriError::Agent(
+                                "Failed to generate unique persona after 100 variations"
+                                    .to_string(),
+                            ));
+                        }
+                    }
                     break;
                 }
             }
@@ -554,6 +569,9 @@ impl ActionGenerator {
         let world_variables = self.parse_world_variables(context);
         let world_tick = self.parse_world_tick(context);
 
+        // Convert HashMap to Vec of tuples for MiniJinja iteration
+        let world_variables_seq: Vec<(String, f32)> = world_variables.into_iter().collect();
+
         let template_context = context! {
             agent_name => &agent.persona.name,
             agent_role => &agent.persona.role,
@@ -563,7 +581,7 @@ impl ActionGenerator {
             world_tick => world_tick,
             recent_events => recent_events,
             relevant_memories => relevant_memories,
-            world_variables => world_variables,
+            world_variables => world_variables_seq,
         };
 
         let prompt = env
@@ -578,10 +596,14 @@ impl ActionGenerator {
     /// Parse recent events from context string
     fn parse_recent_events(&self, context: &str) -> Vec<String> {
         let mut events = Vec::new();
-        if let Some(events_start) = context.find("Recent Events:")
-            && let Some(events_end) = context[events_start..].find("\n\n")
-        {
-            let events_section = &context[events_start + 14..events_start + events_end];
+        if let Some(events_start) = context.find("Recent Events:") {
+            // Find section end: either double newline or end of string
+            let section_start = events_start + 14;
+            let section_end = context[section_start..]
+                .find("\n\n")
+                .map(|i| section_start + i)
+                .unwrap_or(context.len());
+            let events_section = &context[section_start..section_end];
             for line in events_section.lines() {
                 if let Some(content) = line.strip_prefix("- ") {
                     events.push(content.to_string());
@@ -594,10 +616,14 @@ impl ActionGenerator {
     /// Parse relevant memories from context string
     fn parse_relevant_memories(&self, context: &str) -> Vec<MemoryEntry> {
         let mut memories = Vec::new();
-        if let Some(memories_start) = context.find("Relevant Memories:")
-            && let Some(memories_end) = context[memories_start..].find("\n\n")
-        {
-            let memories_section = &context[memories_start + 19..memories_start + memories_end];
+        if let Some(memories_start) = context.find("Relevant Memories:") {
+            // Find section end: either double newline or end of string
+            let section_start = memories_start + 19;
+            let section_end = context[section_start..]
+                .find("\n\n")
+                .map(|i| section_start + i)
+                .unwrap_or(context.len());
+            let memories_section = &context[section_start..section_end];
             for line in memories_section.lines() {
                 if let Some(content) = line.strip_prefix("- ") {
                     memories.push(MemoryEntry {
@@ -614,10 +640,14 @@ impl ActionGenerator {
     /// Parse world variables from context string
     fn parse_world_variables(&self, context: &str) -> std::collections::HashMap<String, f32> {
         let mut variables = std::collections::HashMap::new();
-        if let Some(vars_start) = context.find("World State:")
-            && let Some(vars_end) = context[vars_start..].find("\n\n")
-        {
-            let vars_section = &context[vars_start + 12..vars_start + vars_end];
+        if let Some(vars_start) = context.find("World State:") {
+            // Find section end: either double newline or end of string
+            let section_start = vars_start + 12;
+            let section_end = context[section_start..]
+                .find("\n\n")
+                .map(|i| section_start + i)
+                .unwrap_or(context.len());
+            let vars_section = &context[section_start..section_end];
             for line in vars_section.lines() {
                 if let Some(line_content) = line.strip_prefix("- ")
                     && let Some(colon_pos) = line_content.find(':')
@@ -661,6 +691,7 @@ impl Default for AgentPool {
 mod tests {
     use super::*;
     use crate::graph::{EntityKind, KnowledgeGraph};
+    use crate::sim::{AgentSnapshot, Event};
     use async_trait::async_trait;
     use std::pin::Pin;
 
@@ -885,12 +916,14 @@ mod tests {
     async fn test_agent_pool_group_memory() {
         let pool = AgentPool::new();
 
-        // Add some group memories
+        // Add some group memories in sequence
         let memory1 = MemoryEntry {
             timestamp: chrono::Utc::now(),
             content: "Group memory 1".to_string(),
             importance: 0.8,
         };
+        // Small sleep to ensure different timestamps
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         let memory2 = MemoryEntry {
             timestamp: chrono::Utc::now(),
             content: "Group memory 2".to_string(),
@@ -900,10 +933,11 @@ mod tests {
         pool.add_group_memory(memory1.clone()).await;
         pool.add_group_memory(memory2.clone()).await;
 
-        // Retrieve recent memories
+        // Retrieve recent memories - returns in reverse insertion order (most recently added first)
+        // Note: This is insertion order (via Vec::rev()), not sorted by timestamp
         let recent = pool.get_group_memory(2).await;
         assert_eq!(recent.len(), 2);
-        assert_eq!(recent[0].content, "Group memory 2"); // Most recent first
+        assert_eq!(recent[0].content, "Group memory 2"); // Last inserted first
         assert_eq!(recent[1].content, "Group memory 1");
 
         // Test limit
@@ -1021,28 +1055,23 @@ mod tests {
 
         assert_eq!(pool.len(), 3);
 
-        // Verify agents have unique personas
+        // Verify agents have unique personas (using HashSet for exact uniqueness check)
         let agents: Vec<_> = pool.iter().collect();
-        let mut persona_names: Vec<String> =
-            agents.iter().map(|a| a.persona.name.clone()).collect();
-
-        // Sort and count unique names
-        persona_names.sort();
-        let unique_count = persona_names
+        let persona_ids: std::collections::HashSet<String> = agents
             .iter()
-            .zip(persona_names.iter().skip(1))
-            .filter(|(a, b)| a != b)
-            .count()
-            + 1;
+            .map(|a| format!("{}|{}", a.persona.name, a.persona.role))
+            .collect();
 
-        // Should have at least 2 unique names (original + variations)
-        assert!(unique_count >= 2);
+        // All 3 agents should have unique (name, role) combinations
+        assert_eq!(persona_ids.len(), 3, "All 3 spawned agents must have unique personas");
 
-        // Verify at least one agent has the original name
-        assert!(persona_names.iter().any(|name| name.contains("Duplicate Agent")));
+        // Verify at least one agent has the original name (first one succeeds without conflict)
+        assert!(persona_ids.iter().any(|id| id.contains("Duplicate Agent|")));
 
-        // Verify at least one agent has a varied name (with numeric suffix)
-        assert!(persona_names.iter().any(|name| name.chars().any(|c| c.is_ascii_digit())));
+        // With 3 agents and max_attempts=5, at least 2 should have numeric suffixes
+        // The variation logic: attempt 0 = original, attempt 5 = "Name 5", attempt 5 again = "Name 5 5"
+        let varied_count = agents.iter().filter(|a| a.persona.name != "Duplicate Agent").count();
+        assert!(varied_count >= 1, "At least 1 agent should have a varied name");
     }
 
     #[test]
@@ -1059,5 +1088,359 @@ mod tests {
             "Custom template for {{ entity_name }} ({{ entity_kind }})".to_string();
         let generator = PersonaGenerator::with_template(custom_template.clone());
         assert_eq!(generator.template, custom_template);
+    }
+
+    // ===== Action Generation Tests =====
+
+    #[test]
+    fn test_parse_and_validate_action_speak() {
+        let persona = Persona {
+            name: "Test".to_string(),
+            background: "Test background".to_string(),
+            traits: vec!["test".to_string()],
+            role: "Tester".to_string(),
+        };
+        let agent = Agent::new(persona);
+
+        let action = agent.parse_and_validate_action("Speak(Hello world)").unwrap();
+        assert!(matches!(action, Action::Speak(ref s) if s == "Hello world"));
+    }
+
+    #[test]
+    fn test_parse_and_validate_action_move() {
+        let persona = Persona {
+            name: "Test".to_string(),
+            background: "Test background".to_string(),
+            traits: vec!["test".to_string()],
+            role: "Tester".to_string(),
+        };
+        let agent = Agent::new(persona);
+
+        let action = agent.parse_and_validate_action("Move(Central Park)").unwrap();
+        assert!(matches!(action, Action::Move(ref s) if s == "Central Park"));
+    }
+
+    #[test]
+    fn test_parse_and_validate_action_interact() {
+        let persona = Persona {
+            name: "Test".to_string(),
+            background: "Test background".to_string(),
+            traits: vec!["test".to_string()],
+            role: "Tester".to_string(),
+        };
+        let agent = Agent::new(persona);
+
+        let action = agent.parse_and_validate_action("Interact(Computer terminal)").unwrap();
+        assert!(matches!(action, Action::Interact(ref s) if s == "Computer terminal"));
+    }
+
+    #[test]
+    fn test_parse_and_validate_action_observe() {
+        let persona = Persona {
+            name: "Test".to_string(),
+            background: "Test background".to_string(),
+            traits: vec!["test".to_string()],
+            role: "Tester".to_string(),
+        };
+        let agent = Agent::new(persona);
+
+        let action = agent.parse_and_validate_action("Observe(Suspicious activity)").unwrap();
+        assert!(matches!(action, Action::Observe(ref s) if s == "Suspicious activity"));
+    }
+
+    #[test]
+    fn test_parse_and_validate_action_think() {
+        let persona = Persona {
+            name: "Test".to_string(),
+            background: "Test background".to_string(),
+            traits: vec!["test".to_string()],
+            role: "Tester".to_string(),
+        };
+        let agent = Agent::new(persona);
+
+        let action = agent.parse_and_validate_action("Think(I need a strategy)").unwrap();
+        assert!(matches!(action, Action::Think(ref s) if s == "I need a strategy"));
+    }
+
+    #[test]
+    fn test_parse_and_validate_action_with_whitespace() {
+        let persona = Persona {
+            name: "Test".to_string(),
+            background: "Test background".to_string(),
+            traits: vec!["test".to_string()],
+            role: "Tester".to_string(),
+        };
+        let agent = Agent::new(persona);
+
+        let action = agent.parse_and_validate_action("  Speak(  Hello world  )  ").unwrap();
+        assert!(matches!(action, Action::Speak(ref s) if s == "Hello world"));
+    }
+
+    #[test]
+    fn test_parse_and_validate_action_unknown_type() {
+        let persona = Persona {
+            name: "Test".to_string(),
+            background: "Test background".to_string(),
+            traits: vec!["test".to_string()],
+            role: "Tester".to_string(),
+        };
+        let agent = Agent::new(persona);
+
+        let result = agent.parse_and_validate_action("UnknownAction(something)");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Unknown action type"));
+    }
+
+    #[test]
+    fn test_parse_and_validate_action_invalid_format() {
+        let persona = Persona {
+            name: "Test".to_string(),
+            background: "Test background".to_string(),
+            traits: vec!["test".to_string()],
+            role: "Tester".to_string(),
+        };
+        let agent = Agent::new(persona);
+
+        let result = agent.parse_and_validate_action("Invalid format without parentheses");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Invalid action format"));
+    }
+
+    #[test]
+    fn test_parse_and_validate_action_nested_parens() {
+        let persona = Persona {
+            name: "Test".to_string(),
+            background: "Test background".to_string(),
+            traits: vec!["test".to_string()],
+            role: "Tester".to_string(),
+        };
+        let agent = Agent::new(persona);
+
+        // The parser uses rfind(')') to find the LAST ')', handling nested parens.
+        // For "Think(Consider (the implications))":
+        // - first '(' is at index 5, last ')' is at index 33 (the final one)
+        // - content = "Consider (the implications)" (includes inner closing paren)
+        let action = agent.parse_and_validate_action("Think(Consider (the implications))").unwrap();
+        match action {
+            Action::Think(content) => {
+                assert_eq!(content, "Consider (the implications)");
+                assert!(content.contains("Consider"));
+                assert!(content.contains("implications"));
+            }
+            _ => panic!("Expected Think action"),
+        }
+    }
+
+    #[test]
+    fn test_action_generator_creation() {
+        let generator = ActionGenerator::new();
+        assert!(!generator.template.is_empty());
+    }
+
+    #[test]
+    fn test_action_generator_from_file_fallback() {
+        // Test with non-existent file (should fall back to embedded template)
+        let generator = ActionGenerator::from_file("non_existent_action_template.jinja");
+        assert!(!generator.template.is_empty());
+    }
+
+    #[test]
+    fn test_action_generator_generate_prompt() {
+        let generator = ActionGenerator::new();
+        let persona = Persona {
+            name: "Alice".to_string(),
+            background: "A curious researcher".to_string(),
+            traits: vec!["analytical".to_string(), "creative".to_string()],
+            role: "Analyst".to_string(),
+        };
+        let agent = Agent::new(persona);
+
+        // Context must end with "\n\n" after each section for proper parsing
+        let context = "World Tick: 5\n\nRecent Events:\n- Bob: Spoke: Hello\n\nRelevant Memories:\n- Previous observation\n\nWorld State:\n- temperature: 0.8\n\n";
+
+        let prompt = generator.generate_prompt(&agent, context).unwrap();
+        assert!(prompt.contains("Alice"));
+        assert!(prompt.contains("Analyst"));
+        // Template renders agent traits (passed directly, not from context)
+        assert!(prompt.contains("analytical"));
+        assert!(prompt.contains("creative"));
+        // World variables parsed from context and rendered
+        assert!(prompt.contains("temperature"));
+    }
+
+    #[test]
+    fn test_action_generator_parse_context() {
+        let generator = ActionGenerator::new();
+
+        // Test parsing world tick
+        let context = "World Tick: 42\n\nAgent: Test\nRole: Role\n";
+        let tick = generator.parse_world_tick(context);
+        assert_eq!(tick, 42);
+
+        // Test parsing recent events from construct_context format
+        let context_with_events = "World Tick: 5\n\nRecent Events:\n- Bob: Spoke: Hello\n- Alice: Moved to: Park\n\nRelevant Memories:\n";
+        let events = generator.parse_recent_events(context_with_events);
+        assert_eq!(events.len(), 2);
+        assert!(events[0].contains("Bob"));
+
+        // Test parsing world variables
+        let context_with_vars = "World State:\n- var1: 0.5\n- var2: 1.0\n\n";
+        let variables = generator.parse_world_variables(context_with_vars);
+        assert_eq!(variables.len(), 2);
+        assert_eq!(variables.get("var1"), Some(&0.5f32));
+
+        // Test parsing memories
+        let context_with_memories =
+            "Relevant Memories:\n- Memory content here\n- Another memory\n\nWorld State:";
+        let memories = generator.parse_relevant_memories(context_with_memories);
+        assert_eq!(memories.len(), 2);
+    }
+
+    // ===== Integration Tests with Mock World State =====
+
+    #[tokio::test]
+    async fn test_agent_step_with_mock_llm() {
+        let mock_response = "Speak(Hello from mock LLM)";
+        let mock_llm = MockPersonaLlm::new(mock_response);
+
+        let persona = Persona {
+            name: "TestAgent".to_string(),
+            background: "A test agent".to_string(),
+            traits: vec!["test".to_string()],
+            role: "Tester".to_string(),
+        };
+        let mut agent = Agent::new(persona);
+
+        let mut world = WorldState::new();
+        world.advance_tick();
+        world.inject_variable("temperature".to_string(), 0.5);
+
+        let action = agent.step(&world, &mock_llm).await.unwrap();
+        assert!(matches!(action, Action::Speak(ref s) if s == "Hello from mock LLM"));
+
+        // Verify agent state was restored to Idle
+        assert_eq!(agent.state, AgentState::Idle);
+
+        // Verify action was stored in memory
+        let recent = agent.memory.get_recent(1);
+        assert_eq!(recent.len(), 1);
+        assert!(recent[0].content.contains("Spoke"));
+    }
+
+    #[tokio::test]
+    async fn test_agent_step_with_fallback() {
+        // Mock LLM that returns an error to trigger fallback
+        struct ErrorMockLlm;
+
+        #[async_trait]
+        impl LlmClient for ErrorMockLlm {
+            async fn complete(&self, _prompt: &str) -> Result<String> {
+                Err(TeriError::Llm("Mock error".to_string()))
+            }
+
+            async fn complete_json<T: serde::de::DeserializeOwned>(
+                &self,
+                _prompt: &str,
+            ) -> Result<T> {
+                Err(TeriError::Llm("Mock error".to_string()))
+            }
+
+            async fn stream(
+                &self,
+                _prompt: &str,
+            ) -> Result<Pin<Box<dyn futures::Stream<Item = Result<String>> + Send>>> {
+                Err(TeriError::Llm("Mock error".to_string()))
+            }
+        }
+
+        let mock_llm = ErrorMockLlm;
+        let persona = Persona {
+            name: "TestAgent".to_string(),
+            background: "A test agent".to_string(),
+            traits: vec!["test".to_string()],
+            role: "Tester".to_string(),
+        };
+        let mut agent = Agent::new(persona);
+        let world = WorldState::new();
+
+        let action = agent.step(&world, &mock_llm).await.unwrap();
+        // Should fallback to Think action
+        assert!(
+            matches!(action, Action::Think(ref content) if content.contains("consider my next move"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_agent_step_stores_action_in_memory_with_importance() {
+        let mock_response = "Think(Developing a strategic plan for the mission)";
+        let mock_llm = MockPersonaLlm::new(mock_response);
+
+        let persona = Persona {
+            name: "StrategicAgent".to_string(),
+            background: "A strategic thinker".to_string(),
+            traits: vec!["strategic".to_string()],
+            role: "Planner".to_string(),
+        };
+        let mut agent = Agent::new(persona);
+        let world = WorldState::new();
+
+        // Clear any existing memories
+        agent.memory.clear();
+
+        agent.step(&world, &mock_llm).await.unwrap();
+
+        let recent = agent.memory.get_recent(1);
+        assert_eq!(recent.len(), 1);
+        // Production code stores as "Thought: {content}" where content is "Developing a strategic plan for the mission"
+        assert_eq!(recent[0].content, "Thought: Developing a strategic plan for the mission");
+        // High importance (0.9) because content contains "plan"
+        assert_eq!(recent[0].importance, 0.9);
+    }
+
+    #[tokio::test]
+    async fn test_agent_step_integration_with_complex_world() {
+        let mock_response = "Observe(Surroundings)";
+        let mock_llm = MockPersonaLlm::new(mock_response);
+
+        let persona = Persona {
+            name: "Observer".to_string(),
+            background: "A careful observer".to_string(),
+            traits: vec!["observant".to_string()],
+            role: "Scout".to_string(),
+        };
+        let mut agent = Agent::new(persona.clone());
+
+        let mut world = WorldState::new();
+        world.advance_tick();
+        world.advance_tick();
+
+        // Add another agent to the world
+        let other_agent_id = Uuid::new_v4();
+        world.add_agent_snapshot(
+            other_agent_id,
+            AgentSnapshot {
+                id: other_agent_id,
+                name: "OtherAgent".to_string(),
+                state: "Idle".to_string(),
+            },
+        );
+
+        // Add an event from the other agent
+        world.add_event(Event {
+            agent_id: other_agent_id,
+            action: Action::Speak("Hello everyone".to_string()),
+            timestamp: chrono::Utc::now(),
+        });
+
+        // Add world variables
+        world.inject_variable("danger_level".to_string(), 0.3);
+        world.inject_variable("visibility".to_string(), 0.8);
+
+        let action = agent.step(&world, &mock_llm).await.unwrap();
+        assert!(matches!(action, Action::Observe(ref s) if s == "Surroundings"));
+
+        // Verify agent has memory of the action
+        let memories = agent.memory.get_recent(10);
+        assert!(!memories.is_empty());
     }
 }
