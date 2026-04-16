@@ -611,6 +611,28 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 - [ ] Implement interactive controls
 - [ ] Implement agent chat interface
 
+### Community Seed Adapters
+- [ ] Define `CommunityAdapter` trait in `src/seed/community/mod.rs`
+  - [ ] `async fn fetch_domains(&self) -> Result<Vec<CommunityDomain>>`
+  - [ ] `async fn fetch_contributors(&self, domain: &str) -> Result<Vec<CommunityContributor>>`
+  - [ ] `async fn fetch_signal(&self, domain: &str) -> Result<CommunitySignal>`
+  - [ ] `async fn fetch_topics(&self, domain: &str) -> Result<Vec<CommunityTopic>>`
+  - [ ] `async fn to_seed_document(&self) -> Result<SeedDocument>`
+- [ ] Define normalized output types: `CommunityDomain`, `CommunityContributor`, `CommunitySignal`, `CommunityTopic`
+- [ ] Implement `PebesenAdapter` (reference implementation — highest signal fidelity, least normalization)
+  - [ ] Consumes `pebesen-intelligence` API endpoints
+  - [ ] Maps Pebesen's native domain/contributor/signal model directly to normalized types
+- [ ] Implement `RedditAdapter`
+  - [ ] Subreddit → domain mapping
+  - [ ] Karma → normalized contributor weight
+- [ ] Implement `ZulipAdapter`
+  - [ ] Stream → domain mapping (closest structural match to Pebesen)
+- [ ] Implement `DiscourseAdapter`
+  - [ ] Category → domain mapping
+  - [ ] Trust level → normalized contributor weight
+- [ ] Document adapter authoring guide in `ARCHITECTURE.md`
+- [ ] Add integration tests with mock HTTP responses per adapter
+
 ---
 
 ## Completion Criteria

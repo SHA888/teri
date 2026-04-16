@@ -277,6 +277,98 @@ impl LlmClient for LlamaCppAdapter {
 
 ---
 
+## Community Seed Abstraction
+
+**Teri accepts live community knowledge as a seed source**, parallel to document ingestion. All community platform access goes through a single `CommunityAdapter` trait — no assumptions about the underlying platform.
+
+```rust
+#[async_trait]
+pub trait CommunityAdapter: Send + Sync {
+    async fn fetch_domains(&self)                          -> Result<Vec<CommunityDomain>>;
+    async fn fetch_contributors(&self, domain: &str)      -> Result<Vec<CommunityContributor>>;
+    async fn fetch_signal(&self, domain: &str)            -> Result<CommunitySignal>;
+    async fn fetch_topics(&self, domain: &str)            -> Result<Vec<CommunityTopic>>;
+    async fn to_seed_document(&self)                      -> Result<SeedDocument>;
+}
+
+// Normalized output types — platform-agnostic
+pub struct CommunityDomain {
+    pub slug: String,
+    pub name: String,
+}
+
+pub struct CommunityContributor {
+    pub handle: String,
+    pub domain_weight: f32,   // contribution weight, karma, reputation — normalized to [0,1]
+    pub verified: bool,
+    pub tenure_days: u32,
+}
+
+pub struct CommunitySignal {
+    pub domain: String,
+    pub message_volume: u32,
+    pub contributor_count: u32,
+    pub topic_velocity: f32,  // open/resolve rate or equivalent
+    pub sentiment_proxy: f32, // net reaction ratio or equivalent
+}
+
+pub struct CommunityTopic {
+    pub id: String,
+    pub name: String,
+    pub status: String,
+    pub message_count: u32,
+    pub last_active: DateTime<Utc>,
+}
+```
+
+**Adapter Pattern:** Each platform adapter implements `CommunityAdapter` and handles its own API mapping. The simulation engine only depends on the trait.
+
+**Signal quality varies by platform.** Each adapter normalizes to the common types:
+
+| Platform | Domain signal | Contributor weight | Topic structure |
+|---|---|---|---|
+| Pebesen | Native, structured | Explicit weight | Stream/Topic hierarchy |
+| Reddit | Subreddit mapping | Karma (noisy) | Flat threads |
+| Zulip | Stream mapping | None native | Stream/Topic (close match) |
+| Discourse | Category mapping | Trust level | Thread |
+| Stack Overflow | Tag mapping | Reputation | Q&A |
+
+**Module structure:**
+
+```
+src/seed/
+├── mod.rs           # SeedIngestor (document-based)
+└── community/
+    ├── mod.rs       # CommunityAdapter trait + normalized types
+    ├── pebesen.rs   # PebesenAdapter (reference implementation — highest signal fidelity)
+    ├── reddit.rs    # RedditAdapter
+    ├── zulip.rs     # ZulipAdapter
+    └── discourse.rs # DiscourseAdapter
+```
+
+`PebesenAdapter` is the reference implementation because Pebesen's structured topic/domain/contributor model requires the least normalization logic, making it the cleanest example for new adapter authors.
+
+**Add your own adapter:**
+
+```rust
+pub struct MyPlatformAdapter {
+    base_url: String,
+    api_key: String,
+}
+
+#[async_trait]
+impl CommunityAdapter for MyPlatformAdapter {
+    async fn fetch_signal(&self, domain: &str) -> Result<CommunitySignal> {
+        // map your platform's native signals to CommunitySignal
+    }
+    // ...
+}
+```
+
+**No platform lock-in.** The simulation engine accepts `&dyn CommunityAdapter` — swap platforms without changing simulation code.
+
+---
+
 ## Concurrency Model
 
 ```

@@ -49,3 +49,6 @@ cobertura.xml
 flamegraph.svg
 perf.data
 perf.data.old
+.skill/
+.cursor/rules/skill-context.md
+.windsurf/rules/skill-context.md
