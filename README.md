@@ -3,15 +3,15 @@
 > **Rust-native Swarm Intelligence Prediction Engine**
 > A ground-up rewrite of [MiroFish](https://github.com/666ghj/MiroFish) — designed for performance, type safety, and deployment simplicity.
 
-**Name:** “Teri” (Indonesian: *ikan teri*) is the anchovy — one of the smallest fish in the sea, yet one of the most consequential. Anchovies move in vast, tightly coordinated schools: thousands of individuals following simple local rules, producing emergent behavior no single fish planned or directed. That is exactly what this engine does. Seed the world. Spawn the swarm. Watch emergence happen. It’s also a nod to Indonesian waters, where *ikan teri* has fed communities and ecosystems for centuries, punching far above its size.
+**Name:** "Teri" (Indonesian: *ikan teri*) is the anchovy — one of the smallest fish in the sea, yet one of the most consequential. Anchovies move in vast, tightly coordinated schools: thousands of individuals following simple local rules, producing emergent behavior no single fish planned or directed. That is exactly what this engine does. Seed the world. Spawn the swarm. Watch emergence happen. It's also a nod to Indonesian waters, where *ikan teri* has fed communities and ecosystems for centuries, punching far above its size.
 
 ---
 
 ## What is Teri?
 
-Teri turns seed materials (news articles, policy drafts, financial signals, novels) into a **high-fidelity parallel digital world** populated by thousands of independent agents. Each agent carries its own persona, long-term memory, and behavioural logic. The swarm self-organises, and you observe — or intervene — from a God's-eye view.
+Teri turns seed materials (news articles, policy drafts, financial signals, novels, or live community knowledge) into a **high-fidelity parallel digital world** populated by thousands of independent agents. Each agent carries its own persona, long-term memory, and behavioural logic. The swarm self-organises, and you observe — or intervene — from a God's-eye view.
 
-**Input** → seed file + natural-language prediction query
+**Input** → seed file or community platform signal + natural-language prediction query
 **Output** → structured prediction report + interactive living simulation world
 
 ### Key Features
@@ -22,6 +22,7 @@ Teri turns seed materials (news articles, policy drafts, financial signals, nove
 - 🌐 **Real-time Streaming** - SSE-based live simulation state updates
 - 🎯 **Zero Vendor Lock-in** - Adapter pattern for any LLM provider
 - 📦 **Single Binary** - No Docker, no venv, just `cargo build --release`
+- 🔌 **Community Platform Adapters** - Ingest live community signal from Pebesen, Reddit, Zulip, Discourse; write predictions back via `CommunityFeedback`
 
 ---
 
@@ -58,7 +59,7 @@ cargo run --release -- serve --addr 0.0.0.0:8080
 ## Pipeline
 
 ```
-Seed File
+Seed File or Community Platform
    │
    ▼
 [seed]  ── parse & normalise ──► SeedDocument
@@ -76,8 +77,9 @@ Seed File
    ▼
 [report] ── ReportAgent synthesis ──► PredictionReport + InteractiveWorld
    │
-   ▼
-[api]   ── REST / SSE ──► Client (CLI or frontend)
+   ├──► [api]   ── REST / SSE ──► Client (CLI or frontend)
+   │
+   └──► [feedback] ── CommunityFeedback ──► Source platform (optional write-back)
 ```
 
 ---
@@ -94,6 +96,7 @@ teri/
     ├── main.rs          # CLI entry point (clap)
     ├── lib.rs           # Module declarations
     ├── seed/            # Seed ingestion & normalisation
+    │   └── community/   # CommunityAdapter + CommunityFeedback traits + platform adapters
     ├── graph/           # Knowledge graph (petgraph + LLM extraction)
     ├── agent/           # Agent pool, personas, memory
     ├── sim/             # Simulation engine (tick loop, rayon)
