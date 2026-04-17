@@ -633,6 +633,20 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 - [ ] Document adapter authoring guide in `ARCHITECTURE.md`
 - [ ] Add integration tests with mock HTTP responses per adapter
 
+### Community Feedback Adapters
+- [ ] Define `CommunityFeedback` trait in `src/seed/community/mod.rs`
+  - [ ] `async fn push_topic_signals(&self, signals: Vec<TopicSignal>) -> Result<()>`
+  - [ ] `async fn push_contributor_trajectories(&self, trajectories: Vec<ContributorTrajectory>) -> Result<()>`
+  - [ ] `async fn push_health_risks(&self, risks: Vec<SpaceHealthRisk>) -> Result<()>`
+- [ ] Define output types: `TopicSignal`, `ContributorTrajectory`, `SpaceHealthRisk`
+- [ ] Implement `PebesenFeedback` (reference implementation)
+  - [ ] `POST /v1/intelligence/spaces/:slug/predictions` — write-back endpoint
+  - [ ] Optional calibration poll: `GET /v1/intelligence/spaces/:slug/predictions/:id/action`
+    - [ ] Retrieve `actioned_at` timestamps → feed as confidence adjustments for next sim run
+  - [ ] Self-calibrating per community: confirmed predictions increase confidence, expired unactioned decrease it
+- [ ] Update module structure: `pebesen.rs` implements both `PebesenAdapter` and `PebesenFeedback`
+- [ ] Add integration tests with mock write-back responses
+
 ---
 
 ## Completion Criteria

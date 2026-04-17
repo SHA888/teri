@@ -369,6 +369,68 @@ impl CommunityAdapter for MyPlatformAdapter {
 
 ---
 
+## Community Feedback Abstraction
+
+**Teri can write simulation output back to the source platform**, closing the loop from prediction to action. All write-back goes through a single `CommunityFeedback` trait — symmetric counterpart to `CommunityAdapter`.
+
+```rust
+#[async_trait]
+pub trait CommunityFeedback: Send + Sync {
+    async fn push_topic_signals(
+        &self,
+        signals: Vec<TopicSignal>,
+    ) -> Result<()>;
+
+    async fn push_contributor_trajectories(
+        &self,
+        trajectories: Vec<ContributorTrajectory>,
+    ) -> Result<()>;
+
+    async fn push_health_risks(
+        &self,
+        risks: Vec<SpaceHealthRisk>,
+    ) -> Result<()>;
+}
+
+pub struct TopicSignal {
+    pub domain: String,
+    pub topic_name: String,
+    pub confidence: f32,
+    pub horizon_days: u32,
+}
+
+pub struct ContributorTrajectory {
+    pub handle: String,
+    pub domain: String,
+    pub trajectory: String,   // "rising_anchor", "at_risk_churn", etc.
+    pub confidence: f32,
+}
+
+pub struct SpaceHealthRisk {
+    pub risk_type: String,    // "contributor_concentration", "topic_stagnation", etc.
+    pub description: String,
+    pub confidence: f32,
+    pub horizon_days: u32,
+}
+```
+
+**Calibration loop.** When a platform moderator marks a prediction as actioned, that event is the ground-truth signal. `PebesenFeedback` can optionally poll `POST /v1/intelligence/spaces/:slug/predictions/:id/action` to retrieve actioned timestamps and feed them back as confidence adjustments for the next simulation run against that community. Predictions confirmed accurate increase future confidence weighting; predictions that expired unactioned decrease it. The model self-calibrates per community over time.
+
+**Adapter Pattern:** `CommunityFeedback` implementations are independent of `CommunityAdapter` implementations. A simulation can read from one platform and write to another, or use the same platform for both.
+
+```
+src/seed/community/
+├── mod.rs           # CommunityAdapter + CommunityFeedback traits + all types
+├── pebesen.rs       # PebesenAdapter + PebesenFeedback (reference implementations)
+├── reddit.rs        # RedditAdapter (read-only — no feedback endpoint)
+├── zulip.rs         # ZulipAdapter
+└── discourse.rs     # DiscourseAdapter
+```
+
+**No coupling.** `CommunityFeedback` is additive — Teri functions without it. Write-back only activates when both systems have live deployments and a platform implements the receiving endpoint.
+
+---
+
 ## Concurrency Model
 
 ```
