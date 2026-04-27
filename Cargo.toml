@@ -43,6 +43,9 @@ petgraph = "0.6"
 # Parallel computation (agent simulation)
 rayon = "1"
 
+# Fast non-poisoning mutex for short critical sections in async code
+parking_lot = "0.12"
+
 # Async stream utilities
 futures = "0.3"
 tokio-util = { version = "0.7", features = ["io"] }

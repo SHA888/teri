@@ -200,57 +200,57 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 ## Phase 4: Simulation Module
 
 ### Core Types (`src/sim/mod.rs`)
-- [ ] Define `WorldState` struct
-  - [ ] `tick: u32`
-  - [ ] `agents: HashMap<Uuid, AgentSnapshot>` (lightweight agent state)
-  - [ ] `events: Vec<Event>` (actions taken this tick)
-  - [ ] `variables: HashMap<String, f32>` (God's-eye variables)
-- [ ] Define `Event` struct
-  - [ ] `agent_id: Uuid`
-  - [ ] `action: Action`
-  - [ ] `timestamp: DateTime<Utc>`
-- [ ] Define `WorldSnapshot` struct (serializable tick state)
-- [ ] Define `SimConfig` struct
-  - [ ] `max_ticks: u32`
-  - [ ] `parallelism: usize`
-  - [ ] `inject_fn: Option<Box<dyn Fn(u32, &mut WorldState) + Send + Sync>>`
-- [ ] Define `SimulationResult` struct
-  - [ ] `id: Uuid`
-  - [ ] `history: Vec<WorldSnapshot>`
-  - [ ] `final_state: WorldState`
+- [x] Define `WorldState` struct
+  - [x] `tick: u32`
+  - [x] `agents: HashMap<Uuid, AgentSnapshot>` (lightweight agent state)
+  - [x] `events: Vec<Event>` (actions taken this tick)
+  - [x] `variables: HashMap<String, f32>` (God's-eye variables)
+- [x] Define `Event` struct
+  - [x] `agent_id: Uuid`
+  - [x] `action: Action`
+  - [x] `timestamp: DateTime<Utc>`
+- [x] Define `WorldSnapshot` struct (serializable tick state)
+- [x] Define `SimConfig` struct
+  - [x] `max_ticks: u32`
+  - [x] `parallelism: usize`
+  - [x] `inject_fn: Option<Arc<dyn Fn(u32, &mut WorldState) + Send + Sync>>`
+- [x] Define `SimulationResult` struct
+  - [x] `id: Uuid`
+  - [x] `history: Vec<WorldSnapshot>`
+  - [x] `final_state: WorldState`
 
 ### Simulation Engine
-- [ ] Implement `SimEngine` struct
-- [ ] Implement `SimEngine::new(config: SimConfig) -> Self`
-- [ ] Implement `SimEngine::run(pool: &mut AgentPool, graph: &KnowledgeGraph, llm: &dyn LlmClient) -> Result<SimulationResult>`
-  - [ ] Initialize world state
-  - [ ] Create broadcast channel for streaming
-  - [ ] Tick loop:
+- [x] Implement `SimEngine` struct
+- [x] Implement `SimEngine::new(config: SimConfig) -> Self`
+- [x] Implement `SimEngine::run(pool: &mut AgentPool, graph: &KnowledgeGraph, llm: &dyn LlmClient) -> Result<SimulationResult>`
+  - [x] Initialize world state
+  - [x] Create broadcast channel for streaming
+  - [x] Tick loop:
     - [ ] Parallel agent step using `rayon::par_iter`
-    - [ ] Collect actions from all agents
-    - [ ] Apply actions to world state
-    - [ ] Call inject_fn if present
-    - [ ] Create snapshot
-    - [ ] Broadcast snapshot to listeners
-    - [ ] Store snapshot in history
-  - [ ] Return simulation result
+    - [x] Collect actions from all agents
+    - [x] Apply actions to world state
+    - [x] Call inject_fn if present
+    - [x] Create snapshot
+    - [x] Broadcast snapshot to listeners
+    - [x] Store snapshot in history
+  - [x] Return simulation result
 
 ### State Management
-- [ ] Implement `WorldState::new() -> Self`
-- [ ] Implement `WorldState::apply(&mut self, actions: Vec<Action>)`
-- [ ] Implement `WorldState::snapshot(&self) -> WorldSnapshot`
-- [ ] Implement `WorldState::inject_variable(&mut self, key: String, value: f32)`
+- [x] Implement `WorldState::new() -> Self`
+- [x] Implement `WorldState::apply(&mut self, agent_id: Uuid, action: Action)`
+- [x] Implement `WorldState::snapshot(&self) -> WorldSnapshot`
+- [x] Implement `WorldState::inject_variable(&mut self, key: String, value: f32)`
 
 ### Streaming Support
-- [ ] Set up `tokio::sync::broadcast` channel
+- [x] Set up `tokio::sync::broadcast` channel
 - [ ] Implement snapshot streaming to API layer
 - [ ] Handle backpressure for slow consumers
 
 ### Testing
-- [ ] Unit tests for world state operations
-- [ ] Unit tests for action application
+- [x] Unit tests for world state operations
+- [x] Unit tests for action application
 - [ ] Test parallel agent execution
-- [ ] Test God's-eye injection
+- [x] Test God's-eye injection config
 - [ ] Integration test with small agent pool
 
 ---
