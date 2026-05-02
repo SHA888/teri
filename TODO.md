@@ -243,8 +243,8 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 
 ### Streaming Support
 - [x] Set up `tokio::sync::broadcast` channel
-- [ ] Implement snapshot streaming to API layer
-- [ ] Handle backpressure for slow consumers
+- [x] Implement snapshot streaming to API layer
+- [x] Handle backpressure for slow consumers
 
 ### Testing
 - [x] Unit tests for world state operations
