@@ -38,11 +38,22 @@ pub struct MemoryEntry {
 pub struct AgentMemory {
     pub short_term: VecDeque<MemoryEntry>,
     pub short_term_capacity: usize,
+    #[serde(skip)]
+    pub long_term_db: Option<Arc<redb::Database>>,
 }
 
 impl AgentMemory {
     pub fn new(capacity: usize) -> Self {
-        Self { short_term: VecDeque::with_capacity(capacity), short_term_capacity: capacity }
+        Self {
+            short_term: VecDeque::with_capacity(capacity),
+            short_term_capacity: capacity,
+            long_term_db: None,
+        }
+    }
+
+    pub fn with_long_term_db(mut self, db: Arc<redb::Database>) -> Self {
+        self.long_term_db = Some(db);
+        self
     }
 
     pub fn add_memory(&mut self, entry: MemoryEntry) {
@@ -125,9 +136,65 @@ impl Agent {
     }
 
     /// Retrieve relevant memories based on current world state
-    fn retrieve_relevant_memories(&self, _world: &WorldState) -> Vec<&MemoryEntry> {
-        // Get recent memories (simple implementation - could be enhanced with relevance scoring)
-        self.memory.get_recent(10)
+    /// Uses keyword-overlap scoring: ranks memories by word overlap with recent events and world variables.
+    /// Falls back to recency if no overlaps found.
+    fn retrieve_relevant_memories(&self, world: &WorldState) -> Vec<&MemoryEntry> {
+        if self.memory.short_term.is_empty() {
+            return Vec::new();
+        }
+
+        // Build a set of context keywords from recent events and variables
+        let mut context_words = std::collections::HashSet::new();
+
+        // Add keywords from recent events (up to 5)
+        for event in world.events.iter().rev().take(5) {
+            let action_str = event.action.to_string().to_lowercase();
+            for word in action_str.split_whitespace() {
+                if word.len() > 2 {
+                    // Skip very short words (likely noise)
+                    context_words.insert(word.to_string());
+                }
+            }
+        }
+
+        // Add keywords from world variables
+        for key in world.variables.keys() {
+            for word in key.to_lowercase().split('_') {
+                if word.len() > 2 {
+                    context_words.insert(word.to_string());
+                }
+            }
+        }
+
+        // Score each memory by word overlap with context
+        let mut scored_memories: Vec<(usize, &MemoryEntry)> = self
+            .memory
+            .short_term
+            .iter()
+            .map(|m| {
+                let overlap_count = m
+                    .content
+                    .to_lowercase()
+                    .split_whitespace()
+                    .filter(|word| context_words.contains(*word))
+                    .count();
+                (overlap_count, m)
+            })
+            .collect();
+
+        // Sort by overlap (descending), then by recency (index descending)
+        scored_memories.sort_by(|a, b| {
+            b.0.cmp(&a.0).then_with(|| {
+                let a_idx =
+                    self.memory.short_term.iter().position(|m| m.timestamp == a.1.timestamp);
+                let b_idx =
+                    self.memory.short_term.iter().position(|m| m.timestamp == b.1.timestamp);
+                b_idx.cmp(&a_idx)
+            })
+        });
+
+        // Return top 10 memories
+        scored_memories.iter().take(10).map(|(_, m)| *m).collect()
     }
 
     /// Construct context string from world state and memories

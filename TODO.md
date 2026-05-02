@@ -152,7 +152,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
   - [x] `importance: f32`
 - [x] Define `AgentMemory` struct
   - [x] `short_term: VecDeque<MemoryEntry>` (capped at N entries)
-  - [x] `long_term_db: Arc<RocksDB>` (reference to shared DB)
+  - [x] `long_term_db: Option<Arc<redb::Database>>` (reference to shared DB, optional)
 - [x] Define `Agent` struct
   - [x] `id: Uuid`
   - [x] `persona: Persona`
@@ -162,8 +162,8 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 ### Persona Generation
 - [x] Create persona template in `templates/persona_gen.jinja`
 - [x] Implement `PersonaGenerator` struct
-- [x] Implement `PersonaGenerator::generate(graph: &KnowledgeGraph, llm: &dyn LlmClient) -> Result<Persona>`
-  - [x] Sample entity from graph as role anchor
+- [x] Implement `PersonaGenerator::generate(graph: &KnowledgeGraph, entity: &Entity, llm: &dyn LlmClient) -> Result<Persona>`
+  - [x] Entity sampling moved to `AgentPool::spawn` (single responsibility principle)
   - [x] Generate persona using LLM with template
   - [x] Parse and validate persona
 
@@ -172,6 +172,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
   - [x] `agents: Vec<Agent>`
   - [x] `group_memory: Arc<RwLock<Vec<MemoryEntry>>>`
 - [x] Implement `AgentPool::spawn(n: usize, graph: &KnowledgeGraph, llm: &dyn LlmClient) -> Result<Self>`
+  - [x] Sample entities from graph as role anchors
   - [x] Generate N unique personas
   - [x] Initialize agent memory
   - [x] Create shared group memory
@@ -179,10 +180,10 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 - [x] Implement `AgentPool::get_mut(&mut self, id: Uuid) -> Option<&mut Agent>`
 
 ### Agent Actions
-- [x] Define `Action` enum (Speak, Move, Interact, Observe, etc.)
+- [x] Define `Action` enum (Speak, Move, Interact, Observe, etc.) in `src/sim/mod.rs` (by design: actions are events in world state)
 - [x] Create action template in `templates/agent_action.jinja`
 - [x] Implement `Agent::step(&mut self, world: &WorldState, llm: &dyn LlmClient) -> Result<Action>`
-  - [x] Retrieve relevant memories
+  - [x] Retrieve relevant memories (keyword-overlap scoring against world state)
   - [x] Construct context from world state + memories
   - [x] Generate action using LLM
   - [x] Parse and validate action
