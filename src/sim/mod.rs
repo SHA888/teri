@@ -50,7 +50,13 @@ pub struct WorldState {
 
 impl WorldState {
     pub fn new() -> Self {
-        Self { tick: 0, agents: HashMap::new(), events: Vec::new(), variables: HashMap::new() }
+        Self {
+            tick: 0,
+            // Pre-allocate with typical small-pool capacity to avoid early rehashing.
+            agents: HashMap::with_capacity(16),
+            events: Vec::with_capacity(16),
+            variables: HashMap::with_capacity(8),
+        }
     }
 
     pub fn add_agent_snapshot(&mut self, agent_id: Uuid, snapshot: AgentSnapshot) {
@@ -83,7 +89,18 @@ impl WorldState {
         self.events.push(event);
     }
 
+    /// Advance to the next tick, clearing per-tick events.
+    ///
+    /// Invariant: `events` must contain at most one entry per registered agent.
+    /// Callers (SimEngine) are responsible for enforcing this; violations are
+    /// caught in debug builds via the assert below.
     pub fn advance_tick(&mut self) {
+        debug_assert!(
+            self.events.len() <= self.agents.len().max(1) * 2,
+            "events ({}) exceeded expected per-tick budget ({}); inject_fn may be over-publishing",
+            self.events.len(),
+            self.agents.len() * 2,
+        );
         self.tick += 1;
         self.events.clear();
     }
@@ -141,8 +158,16 @@ pub type InjectFn = std::sync::Arc<dyn Fn(u32, &mut WorldState) + Send + Sync>;
 /// # Fields
 ///
 /// * `max_ticks` - Maximum number of simulation ticks to run before stopping
-/// * `parallelism` - Reserved for future parallel execution (currently unused)
+/// * `parallelism` - Max concurrent LLM calls per tick (used by `SimEngine::run`)
 /// * `inject_fn` - Optional function called at each tick to modify world state
+///
+/// # Memory characteristics
+///
+/// `SimEngine::run` holds all tick snapshots in memory for the full duration
+/// of the simulation. Memory usage is approximately
+/// `O(max_ticks * agent_count * snapshot_size)`. For large simulations
+/// (e.g. `max_ticks > 1000` with large pools), monitor heap usage and
+/// consider reducing `max_ticks` or snapshotting to disk.
 ///
 /// # Note on `Clone`
 ///
@@ -162,8 +187,10 @@ pub type InjectFn = std::sync::Arc<dyn Fn(u32, &mut WorldState) + Send + Sync>;
 #[derive(Clone)]
 pub struct SimConfig {
     pub max_ticks: u32,
-    /// Reserved for future parallel async agent execution (e.g. scoped tokio tasks).
-    /// Currently unused — `SimEngine::run` executes agents sequentially.
+    /// Maximum number of concurrent LLM calls per tick.
+    /// Controls `stream::buffered(parallelism)` in `SimEngine::run`.
+    /// Set to 1 to execute agents sequentially; higher values increase
+    /// throughput at the cost of additional concurrent HTTP connections.
     pub parallelism: usize,
     pub inject_fn: Option<InjectFn>,
 }
@@ -239,20 +266,45 @@ impl Default for SimConfig {
 pub struct SimulationResult {
     pub id: Uuid,
     pub history: Vec<WorldSnapshot>,
-    pub final_state: WorldState,
 }
+
+impl SimulationResult {
+    /// Returns a reference to the last snapshot in history, i.e. the final world state.
+    pub fn final_snapshot(&self) -> Option<&WorldSnapshot> {
+        self.history.last()
+    }
+}
+
+/// Callback type for snapshot hooks registered with `SimEngine`.
+/// Each hook is called once per tick with a clone of the tick's snapshot.
+pub type SnapshotHook = Arc<dyn Fn(WorldSnapshot) + Send + Sync>;
 
 pub struct SimEngine {
     config: SimConfig,
     snapshot_tx: broadcast::Sender<WorldSnapshot>,
     snapshot_history: Arc<Mutex<Vec<WorldSnapshot>>>,
+    /// Registered snapshot hooks (e.g. TickBuffer adapters for HTTP streaming).
+    snapshot_hooks: Vec<SnapshotHook>,
 }
 
 impl SimEngine {
     pub fn new(config: SimConfig) -> Self {
-        let capacity = (config.max_ticks as usize).max(64);
-        let (snapshot_tx, _snapshot_rx) = broadcast::channel(capacity);
-        Self { config, snapshot_tx, snapshot_history: Arc::new(Mutex::new(Vec::new())) }
+        // Fixed capacity of 64: gives slow receivers a short grace window before
+        // RecvError::Lagged. History replay via subscribe_with_history() covers
+        // ticks beyond the 64-slot window.
+        let (snapshot_tx, _snapshot_rx) = broadcast::channel(64);
+        Self {
+            config,
+            snapshot_tx,
+            snapshot_history: Arc::new(Mutex::new(Vec::new())),
+            snapshot_hooks: Vec::new(),
+        }
+    }
+
+    /// Register a snapshot hook called once per tick during `run()`.
+    /// Use `StreamAdapter::as_hook()` to wire a `TickBuffer` for HTTP streaming.
+    pub fn register_snapshot_hook(&mut self, hook: SnapshotHook) {
+        self.snapshot_hooks.push(hook);
     }
 
     pub fn config(&self) -> &SimConfig {
@@ -283,12 +335,16 @@ impl SimEngine {
     pub async fn run<L: crate::llm::LlmClient>(
         &self,
         pool: &mut crate::agent::AgentPool,
-        _graph: &crate::graph::KnowledgeGraph, // TODO: use graph for per-agent context construction
+        // TODO(graph-context): pass per-agent subgraph slices once Agent::prepare_action
+        // accepts a graph reference. Tracked: _graph param intentionally kept so callers
+        // do not need an API change when the feature lands.
+        _graph: &crate::graph::KnowledgeGraph,
         llm: &L,
     ) -> crate::error::Result<SimulationResult> {
+        use futures::stream::{self, StreamExt};
+
         self.snapshot_history.lock().clear();
         let mut world = WorldState::new();
-        let mut history = Vec::new();
 
         // Seed agent snapshots into world state
         for agent in pool.iter() {
@@ -305,12 +361,23 @@ impl SimEngine {
         for _ in 0..self.config.max_ticks {
             world.advance_tick();
 
-            // Run each agent step sequentially (parallel async requires scoped tasks)
-            for agent in pool.iter_mut() {
-                let action = agent.step(&world, llm).await?;
-                world.apply(agent.id, action);
-                if let Some(snapshot) = world.agents.get_mut(&agent.id) {
-                    snapshot.state = format!("{:?}", agent.state);
+            // Phase 1: prepare actions concurrently (immutable reads + LLM calls).
+            // stream::buffered drives at most `parallelism` futures simultaneously,
+            // giving real throughput gains when agent steps are LLM-bound.
+            let actions: Vec<crate::error::Result<crate::sim::Action>> =
+                stream::iter(pool.agents.iter())
+                    .map(|agent| agent.prepare_action(&world, llm))
+                    .buffered(self.config.parallelism)
+                    .collect()
+                    .await;
+
+            // Phase 2: commit results sequentially (mutable writes + world state).
+            for (agent, action_result) in pool.agents.iter_mut().zip(actions.into_iter()) {
+                let action = action_result?;
+                world.apply(agent.id, action.clone());
+                agent.commit_action(&action);
+                if let Some(snap) = world.agents.get_mut(&agent.id) {
+                    snap.state = format!("{:?}", agent.state);
                 }
             }
 
@@ -320,14 +387,19 @@ impl SimEngine {
             }
 
             let snapshot = world.snapshot();
-            let _ = self.snapshot_tx.send(snapshot.clone()); // ignore if no listeners
-            self.snapshot_history.lock().push(snapshot.clone());
-            history.push(snapshot);
+            // Broadcast to live subscribers (RecvError::Lagged signals gap to slow consumers)
+            let _ = self.snapshot_tx.send(snapshot.clone());
+            // Call registered hooks (e.g. TickBuffer adapters for HTTP streaming — 3A)
+            for hook in &self.snapshot_hooks {
+                hook(snapshot.clone());
+            }
+            // snapshot_history is the single canonical in-memory store (6A)
+            self.snapshot_history.lock().push(snapshot);
         }
 
-        let result = SimulationResult { id: Uuid::new_v4(), history, final_state: world };
-
-        Ok(result)
+        // Clone history from canonical store; avoids a local Vec running in parallel (6A)
+        let history = self.snapshot_history.lock().clone();
+        Ok(SimulationResult { id: Uuid::new_v4(), history })
     }
 }
 
@@ -506,14 +578,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_parallel_agent_execution() {
-        // Test that SimEngine can execute multiple agents concurrently within a tick.
-        // This validates that the agent step mechanism doesn't block and can handle
-        // multiple agents acting in the same tick.
-
+    async fn test_sim_engine_runs_multiple_agents() {
+        // 9A: verify SimEngine::run executes all agents each tick and collects
+        // their actions into the world snapshot. Uses a mock LLM.
         use crate::agent::{Agent, AgentPool, Persona};
+        use crate::error::Result;
+        use crate::llm::LlmClient;
+        use async_trait::async_trait;
+        use std::pin::Pin;
 
-        // Create a small pool of agents
+        struct MockLlm;
+        #[async_trait]
+        impl LlmClient for MockLlm {
+            async fn complete(&self, _: &str) -> Result<String> {
+                Ok("Speak(hello from mock)".to_string())
+            }
+            async fn complete_json<T: serde::de::DeserializeOwned>(&self, _: &str) -> Result<T> {
+                Err(crate::error::TeriError::Llm("not used".into()))
+            }
+            async fn stream(
+                &self,
+                _: &str,
+            ) -> Result<Pin<Box<dyn futures::Stream<Item = Result<String>> + Send>>> {
+                Err(crate::error::TeriError::Llm("not used".into()))
+            }
+        }
+
         let mut pool = AgentPool::new();
         for i in 0..3 {
             let persona = Persona {
@@ -522,86 +612,167 @@ mod tests {
                 traits: vec!["test".to_string()],
                 role: "tester".to_string(),
             };
-            let agent = Agent::new(persona);
-            pool.add_agent(agent);
+            pool.add_agent(Agent::new(persona));
         }
 
-        assert_eq!(pool.len(), 3);
+        let config = SimConfig::new(2, 3); // 2 ticks, 3 concurrent (all agents in parallel)
+        let engine = SimEngine::new(config);
+        let graph = crate::graph::KnowledgeGraph::new();
+        let llm = MockLlm;
 
-        // Verify pool can be iterated (mock of parallel execution)
-        let agent_count = pool.iter().count();
-        assert_eq!(agent_count, 3);
+        let result = engine.run(&mut pool, &graph, &llm).await.expect("run failed");
 
-        // Verify all agents have distinct IDs
-        let ids: Vec<_> = pool.iter().map(|a| a.id).collect();
-        assert_eq!(ids.len(), 3);
-        assert_eq!(ids[0], ids[0]); // Same agent, same ID
-        assert_ne!(ids[0], ids[1]); // Different agents, different IDs
+        // 2 ticks recorded
+        assert_eq!(result.history.len(), 2);
+        // Each tick has 3 events (one per agent)
+        for snapshot in &result.history {
+            assert_eq!(snapshot.events.len(), 3, "expected 3 events at tick {}", snapshot.tick);
+        }
+        // Tick numbers increment correctly
+        assert_eq!(result.history[0].tick, 1);
+        assert_eq!(result.history[1].tick, 2);
+        // final_snapshot convenience method works
+        assert_eq!(result.final_snapshot().unwrap().tick, 2);
     }
 
-    #[test]
-    fn test_integration_small_agent_pool() {
-        // Integration test: Verify engine setup and config work together.
-        // Full end-to-end test with actual LLM would require mock framework.
-
+    #[tokio::test]
+    async fn test_integration_small_agent_pool() {
+        // 10A: integration test that actually calls engine.run() with inject_fn,
+        // verifies inject_fn variables appear in snapshots and history is complete.
         use crate::agent::{Agent, AgentPool, Persona};
+        use crate::error::Result;
+        use crate::llm::LlmClient;
+        use async_trait::async_trait;
+        use std::pin::Pin;
 
-        // Setup: Create a small agent pool
+        struct MockLlm;
+        #[async_trait]
+        impl LlmClient for MockLlm {
+            async fn complete(&self, _: &str) -> Result<String> {
+                Ok("Think(exploring)".to_string())
+            }
+            async fn complete_json<T: serde::de::DeserializeOwned>(&self, _: &str) -> Result<T> {
+                Err(crate::error::TeriError::Llm("not used".into()))
+            }
+            async fn stream(
+                &self,
+                _: &str,
+            ) -> Result<Pin<Box<dyn futures::Stream<Item = Result<String>> + Send>>> {
+                Err(crate::error::TeriError::Llm("not used".into()))
+            }
+        }
+
         let mut pool = AgentPool::new();
         for i in 0..2 {
             let persona = Persona {
                 name: format!("TestAgent-{}", i),
                 background: format!("Test agent {}", i),
-                traits: vec!["curious".to_string(), "thoughtful".to_string()],
+                traits: vec!["curious".to_string()],
                 role: "explorer".to_string(),
             };
-            let agent = Agent::new(persona);
-            pool.add_agent(agent);
+            pool.add_agent(Agent::new(persona));
         }
 
-        // Verify: Pool was created correctly
-        assert_eq!(pool.len(), 2);
-
-        // Setup: Create simulation config with injection function
-        let config = SimConfig::new(10, 2).with_inject_fn(|tick, world| {
-            // Inject a tick counter that increments each tick
+        let config = SimConfig::new(3, 2).with_inject_fn(|tick, world| {
             world.inject_variable("sim_tick".to_string(), tick as f32);
-
-            // Inject environment pressure that changes over time
-            let pressure = 1000.0 + (tick as f32 * 5.0);
-            world.inject_variable("pressure".to_string(), pressure);
+            world.inject_variable("pressure".to_string(), 1000.0 + (tick as f32 * 5.0));
         });
 
-        // Setup: Create engine
         let engine = SimEngine::new(config);
+        let graph = crate::graph::KnowledgeGraph::new();
+        let llm = MockLlm;
 
-        // Verify: Engine was initialized correctly
-        assert_eq!(engine.config().max_ticks, 10);
-        assert_eq!(engine.config().parallelism, 2);
-        assert!(engine.config().inject_fn.is_some());
+        let result = engine.run(&mut pool, &graph, &llm).await.expect("run failed");
 
-        // Verify: Engine can create subscriptions
-        let rx = engine.subscribe();
-        assert_eq!(rx.len(), 0);
+        // 3 ticks in history
+        assert_eq!(result.history.len(), 3);
 
-        // Verify: Engine can create history subscriptions
-        let (rx2, history) = engine.subscribe_with_history();
-        assert_eq!(rx2.len(), 0);
-        assert_eq!(history.lock().len(), 0);
-
-        // Verify: Injection function works when called
-        let mut test_world = WorldState::new();
-        if let Some(ref inject) = engine.config().inject_fn {
-            inject(5, &mut test_world);
-            assert_eq!(test_world.get_variable("sim_tick"), Some(5.0));
-            assert_eq!(test_world.get_variable("pressure"), Some(1025.0));
+        // inject_fn variables present in each snapshot
+        for (i, snapshot) in result.history.iter().enumerate() {
+            let expected_tick = (i + 1) as f32;
+            assert_eq!(
+                snapshot.get_variable("sim_tick"),
+                Some(expected_tick),
+                "sim_tick wrong at history index {i}"
+            );
+            assert_eq!(
+                snapshot.get_variable("pressure"),
+                Some(1000.0 + expected_tick * 5.0),
+                "pressure wrong at history index {i}"
+            );
         }
 
-        // Verify: Subscriptions work
-        assert_eq!(engine.subscribe().len(), 0);
+        // 2 events per tick (one per agent)
+        for snapshot in &result.history {
+            assert_eq!(snapshot.events.len(), 2);
+        }
+    }
 
-        // Verify: History subscriptions work
-        let (_, history) = engine.subscribe_with_history();
-        assert_eq!(history.lock().len(), 0);
+    #[tokio::test]
+    async fn test_sim_engine_run_basic_with_broadcast() {
+        // 11A + 12A: thorough test of engine.run() — history, event count, tick order,
+        // and broadcast receiver receives all snapshots in order.
+        use crate::agent::{Agent, AgentPool, Persona};
+        use crate::error::Result;
+        use crate::llm::LlmClient;
+        use async_trait::async_trait;
+        use std::pin::Pin;
+
+        struct MockLlm;
+        #[async_trait]
+        impl LlmClient for MockLlm {
+            async fn complete(&self, _: &str) -> Result<String> {
+                Ok("Observe(the room)".to_string())
+            }
+            async fn complete_json<T: serde::de::DeserializeOwned>(&self, _: &str) -> Result<T> {
+                Err(crate::error::TeriError::Llm("not used".into()))
+            }
+            async fn stream(
+                &self,
+                _: &str,
+            ) -> Result<Pin<Box<dyn futures::Stream<Item = Result<String>> + Send>>> {
+                Err(crate::error::TeriError::Llm("not used".into()))
+            }
+        }
+
+        const TICKS: u32 = 4;
+        const AGENTS: usize = 2;
+
+        let mut pool = AgentPool::new();
+        for i in 0..AGENTS {
+            pool.add_agent(Agent::new(Persona {
+                name: format!("Bot-{i}"),
+                background: "test".into(),
+                traits: vec!["test".into()],
+                role: "observer".into(),
+            }));
+        }
+
+        let config = SimConfig::new(TICKS, AGENTS);
+        let engine = SimEngine::new(config);
+
+        // 12A: subscribe BEFORE run so receiver captures all ticks
+        let mut rx = engine.subscribe();
+
+        let graph = crate::graph::KnowledgeGraph::new();
+        let llm = MockLlm;
+        let result = engine.run(&mut pool, &graph, &llm).await.expect("run failed");
+
+        // History correctness
+        assert_eq!(result.history.len(), TICKS as usize);
+        for (i, snap) in result.history.iter().enumerate() {
+            assert_eq!(snap.tick, (i + 1) as u32);
+            assert_eq!(snap.events.len(), AGENTS, "tick {} must have {} events", snap.tick, AGENTS);
+        }
+
+        // Broadcast receiver received all TICKS snapshots in order
+        let mut received = Vec::new();
+        while let Ok(snap) = rx.try_recv() {
+            received.push(snap);
+        }
+        assert_eq!(received.len(), TICKS as usize, "broadcast delivered wrong number of snapshots");
+        for (i, snap) in received.iter().enumerate() {
+            assert_eq!(snap.tick, (i + 1) as u32, "broadcast tick order wrong at index {i}");
+        }
     }
 }

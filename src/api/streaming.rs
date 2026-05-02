@@ -127,6 +127,22 @@ impl StreamAdapter {
     pub fn push_snapshot(&self, snapshot: WorldSnapshot) -> Option<WorldSnapshot> {
         self.buffer.push(snapshot)
     }
+
+    /// Return a `SnapshotHook` closure suitable for `SimEngine::register_snapshot_hook`.
+    ///
+    /// # Example
+    /// ```ignore
+    /// let adapter = StreamAdapter::new(100);
+    /// engine.register_snapshot_hook(adapter.as_hook());
+    /// engine.run(&mut pool, &graph, &llm).await?;
+    /// let snapshots = adapter.buffer().drain_all();
+    /// ```
+    pub fn as_hook(&self) -> std::sync::Arc<dyn Fn(WorldSnapshot) + Send + Sync> {
+        let buffer = Arc::clone(&self.buffer);
+        std::sync::Arc::new(move |snapshot| {
+            buffer.push(snapshot);
+        })
+    }
 }
 
 #[cfg(test)]

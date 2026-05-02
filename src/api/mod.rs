@@ -74,6 +74,18 @@ impl TickStreamEvent {
             event_id: format!("tick-{}", snapshot.tick),
         })
     }
+
+    /// Create a gap-notification event for ticks missed due to broadcast lag (14A).
+    ///
+    /// When a broadcast receiver gets `RecvError::Lagged(n)`, emit this event
+    /// so SSE clients know they missed `n` ticks and can request a history replay.
+    pub fn lag_gap(missed_ticks: u64) -> Self {
+        Self {
+            tick: 0,
+            data: serde_json::json!({ "gap": true, "missed_ticks": missed_ticks }),
+            event_id: format!("gap-{}", missed_ticks),
+        }
+    }
 }
 
 /// Configuration for streaming backpressure handling.
@@ -86,26 +98,23 @@ pub struct StreamConfig {
     /// Once this limit is hit, oldest ticks are dropped to make room for new ones.
     /// Range: 1..1000, typical: 50-100
     pub max_buffer_size: usize,
-    /// If true, slow consumers are dropped instead of events being dropped.
-    /// If false, events are dropped to prevent memory growth.
-    pub drop_slow_consumers: bool,
 }
 
 impl Default for StreamConfig {
     fn default() -> Self {
-        Self { max_buffer_size: 100, drop_slow_consumers: false }
+        Self { max_buffer_size: 100 }
     }
 }
 
 impl StreamConfig {
     /// Create a streaming config optimized for low-latency applications (small buffers).
     pub fn low_latency() -> Self {
-        Self { max_buffer_size: 10, drop_slow_consumers: false }
+        Self { max_buffer_size: 10 }
     }
 
     /// Create a streaming config optimized for reliable delivery (large buffers).
     pub fn reliable_delivery() -> Self {
-        Self { max_buffer_size: 500, drop_slow_consumers: false }
+        Self { max_buffer_size: 500 }
     }
 }
 
@@ -159,20 +168,25 @@ mod tests {
     fn test_stream_config_defaults() {
         let config = StreamConfig::default();
         assert_eq!(config.max_buffer_size, 100);
-        assert!(!config.drop_slow_consumers);
     }
 
     #[test]
     fn test_stream_config_low_latency() {
         let config = StreamConfig::low_latency();
         assert_eq!(config.max_buffer_size, 10);
-        assert!(!config.drop_slow_consumers);
     }
 
     #[test]
     fn test_stream_config_reliable_delivery() {
         let config = StreamConfig::reliable_delivery();
         assert_eq!(config.max_buffer_size, 500);
-        assert!(!config.drop_slow_consumers);
+    }
+
+    #[test]
+    fn test_tick_stream_event_lag_gap() {
+        let event = TickStreamEvent::lag_gap(42);
+        assert_eq!(event.event_id, "gap-42");
+        assert_eq!(event.data["missed_ticks"], 42);
+        assert_eq!(event.data["gap"], true);
     }
 }

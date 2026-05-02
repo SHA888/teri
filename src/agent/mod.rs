@@ -106,6 +106,27 @@ impl Agent {
         self.state = state;
     }
 
+    /// Pure read phase of a step: retrieve context, call LLM, return validated action.
+    /// Does NOT mutate agent state or memory — safe to call concurrently across agents.
+    /// Pair with `commit_action` to complete the step.
+    pub async fn prepare_action<L: LlmClient>(
+        &self,
+        world: &WorldState,
+        llm: &L,
+    ) -> Result<Action> {
+        let relevant_memories = self.retrieve_relevant_memories(world);
+        let context = self.construct_context(world, &relevant_memories);
+        let action_str = self.generate_action_with_fallback(&context, llm).await?;
+        self.parse_and_validate_action(&action_str)
+    }
+
+    /// Mutation phase of a step: store action in memory and return to Idle.
+    /// Call after `prepare_action` has returned the validated action.
+    pub fn commit_action(&mut self, action: &Action) {
+        self.store_action_in_memory(action);
+        self.set_state(AgentState::Idle);
+    }
+
     /// Execute one step of the agent's decision-making process
     pub async fn step<L: LlmClient>(&mut self, world: &WorldState, llm: &L) -> Result<Action> {
         // Set state to Thinking

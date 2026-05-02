@@ -224,10 +224,11 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 - [x] Implement `SimEngine` struct
 - [x] Implement `SimEngine::new(config: SimConfig) -> Self`
 - [x] Implement `SimEngine::run(pool: &mut AgentPool, graph: &KnowledgeGraph, llm: &dyn LlmClient) -> Result<SimulationResult>`
+  - Note: `graph` param is accepted but not yet used for per-agent context. TODO(graph-context): wire subgraph slices to `Agent::prepare_action` once signature is extended.
   - [x] Initialize world state
   - [x] Create broadcast channel for streaming
   - [x] Tick loop:
-    - [ ] Parallel agent step using `rayon::par_iter`
+    - [x] Concurrent agent step using `futures::stream::buffered(parallelism)` (LLM calls run concurrently; `rayon` not used — async-correct approach)
     - [x] Collect actions from all agents
     - [x] Apply actions to world state
     - [x] Call inject_fn if present
