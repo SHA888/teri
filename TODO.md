@@ -249,9 +249,9 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 ### Testing
 - [x] Unit tests for world state operations
 - [x] Unit tests for action application
-- [ ] Test parallel agent execution
+- [x] Test parallel agent execution
 - [x] Test God's-eye injection config
-- [ ] Integration test with small agent pool
+- [x] Integration test with small agent pool
 
 ---
 
