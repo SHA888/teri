@@ -1,3 +1,5 @@
+pub mod streaming;
+
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -46,6 +48,67 @@ pub enum SimStatus {
     Failed,
 }
 
+/// Streaming tick event for Server-Sent Events (SSE).
+///
+/// Represents a single simulation tick snapshot ready to be streamed to API clients.
+/// Used by the `/sim/:id/stream` endpoint to push live updates to connected browsers.
+#[derive(Debug, Clone, Serialize)]
+pub struct TickStreamEvent {
+    /// Tick number (0-indexed)
+    pub tick: u32,
+    /// Serialized world snapshot data
+    pub data: serde_json::Value,
+    /// Optional event ID for SSE client deduplication
+    pub event_id: String,
+}
+
+impl TickStreamEvent {
+    /// Create a new tick stream event from a world snapshot.
+    ///
+    /// # Errors
+    /// Returns error if serialization fails.
+    pub fn from_snapshot(snapshot: &crate::sim::WorldSnapshot) -> crate::error::Result<Self> {
+        Ok(Self {
+            tick: snapshot.tick,
+            data: serde_json::to_value(snapshot)?,
+            event_id: format!("tick-{}", snapshot.tick),
+        })
+    }
+}
+
+/// Configuration for streaming backpressure handling.
+///
+/// Controls how the API layer buffers ticks when consumers are slow,
+/// preventing unbounded memory growth.
+#[derive(Debug, Clone)]
+pub struct StreamConfig {
+    /// Maximum number of buffered ticks before dropping old events.
+    /// Once this limit is hit, oldest ticks are dropped to make room for new ones.
+    /// Range: 1..1000, typical: 50-100
+    pub max_buffer_size: usize,
+    /// If true, slow consumers are dropped instead of events being dropped.
+    /// If false, events are dropped to prevent memory growth.
+    pub drop_slow_consumers: bool,
+}
+
+impl Default for StreamConfig {
+    fn default() -> Self {
+        Self { max_buffer_size: 100, drop_slow_consumers: false }
+    }
+}
+
+impl StreamConfig {
+    /// Create a streaming config optimized for low-latency applications (small buffers).
+    pub fn low_latency() -> Self {
+        Self { max_buffer_size: 10, drop_slow_consumers: false }
+    }
+
+    /// Create a streaming config optimized for reliable delivery (large buffers).
+    pub fn reliable_delivery() -> Self {
+        Self { max_buffer_size: 500, drop_slow_consumers: false }
+    }
+}
+
 pub struct ApiState {
     pub config: crate::Config,
 }
@@ -76,5 +139,40 @@ mod tests {
         let req = ChatRequest { message: "Hello".to_string(), agent_id: Some(Uuid::new_v4()) };
 
         assert_eq!(req.message, "Hello");
+    }
+
+    #[test]
+    fn test_tick_stream_event_creation() {
+        let snapshot = crate::sim::WorldSnapshot {
+            tick: 42,
+            agents: Default::default(),
+            events: Vec::new(),
+            variables: Default::default(),
+        };
+
+        let event = TickStreamEvent::from_snapshot(&snapshot).unwrap();
+        assert_eq!(event.tick, 42);
+        assert_eq!(event.event_id, "tick-42");
+    }
+
+    #[test]
+    fn test_stream_config_defaults() {
+        let config = StreamConfig::default();
+        assert_eq!(config.max_buffer_size, 100);
+        assert!(!config.drop_slow_consumers);
+    }
+
+    #[test]
+    fn test_stream_config_low_latency() {
+        let config = StreamConfig::low_latency();
+        assert_eq!(config.max_buffer_size, 10);
+        assert!(!config.drop_slow_consumers);
+    }
+
+    #[test]
+    fn test_stream_config_reliable_delivery() {
+        let config = StreamConfig::reliable_delivery();
+        assert_eq!(config.max_buffer_size, 500);
+        assert!(!config.drop_slow_consumers);
     }
 }
