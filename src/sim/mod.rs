@@ -112,8 +112,53 @@ pub struct WorldSnapshot {
     pub variables: HashMap<String, f32>,
 }
 
+impl WorldSnapshot {
+    /// Get a variable value from the world snapshot.
+    ///
+    /// This provides the same interface as `WorldState::get_variable()`.
+    ///
+    /// # Arguments
+    /// * `key` - Variable name to lookup
+    ///
+    /// # Returns
+    /// * `Some(value)` if the variable exists
+    /// * `None` if the variable does not exist
+    pub fn get_variable(&self, key: &str) -> Option<f32> {
+        self.variables.get(key).copied()
+    }
+}
+
 pub type InjectFn = std::sync::Arc<dyn Fn(u32, &mut WorldState) + Send + Sync>;
 
+/// Configuration for simulation execution.
+///
+/// Defines tick limits, parallelism level, and an optional injection function
+/// for external control of world state (the "God's-eye" mechanism).
+///
+/// The injection function allows external code to modify the simulation state
+/// at each tick, enabling "what-if" scenarios or external control systems.
+///
+/// # Fields
+///
+/// * `max_ticks` - Maximum number of simulation ticks to run before stopping
+/// * `parallelism` - Reserved for future parallel execution (currently unused)
+/// * `inject_fn` - Optional function called at each tick to modify world state
+///
+/// # Note on `Clone`
+///
+/// `SimConfig` implements `Clone` because the injection function is wrapped in
+/// `Arc<dyn Fn>`, which is shareable across threads.
+///
+/// # Example
+///
+/// ```ignore
+/// let config = SimConfig::new(100, 8)
+///     .with_inject_fn(|tick, world| {
+///         if tick == 50 {
+///             world.inject_variable("halfway".to_string(), 1.0);
+///         }
+///     });
+/// ```
 #[derive(Clone)]
 pub struct SimConfig {
     pub max_ticks: u32,
@@ -123,12 +168,63 @@ pub struct SimConfig {
     pub inject_fn: Option<InjectFn>,
 }
 
+impl SimConfig {
+    /// Create a new `SimConfig` with the specified tick limit and parallelism.
+    ///
+    /// The injection function is not set; use `with_inject_fn()` to add one.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_ticks` - Maximum number of simulation ticks to run
+    /// * `parallelism` - Number of threads for parallel agent execution
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let config = SimConfig::new(100, 8);
+    /// ```
+    pub fn new(max_ticks: u32, parallelism: usize) -> Self {
+        Self { max_ticks, parallelism, inject_fn: None }
+    }
+
+    /// Register an injection function to modify world state at each tick.
+    ///
+    /// The injection function is called by the simulation engine at each tick
+    /// with the current tick number and a mutable reference to the `WorldState`.
+    /// This allows external code to inject or modify world variables based on
+    /// the simulation progress (the "God's-eye" mechanism).
+    ///
+    /// # Arguments
+    ///
+    /// * `inject_fn` - A function that takes (tick: u32, world: &mut WorldState)
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let config = SimConfig::new(100, 4)
+    ///     .with_inject_fn(|tick, world| {
+    ///         // Increase temperature every 10 ticks
+    ///         if tick % 10 == 0 {
+    ///             let current_temp = world.get_variable("temp").unwrap_or(20.0);
+    ///             world.inject_variable("temp".to_string(), current_temp + 1.0);
+    ///         }
+    ///     });
+    /// ```
+    pub fn with_inject_fn<F>(mut self, inject_fn: F) -> Self
+    where
+        F: Fn(u32, &mut WorldState) + Send + Sync + 'static,
+    {
+        self.inject_fn = Some(std::sync::Arc::new(inject_fn));
+        self
+    }
+}
+
 impl std::fmt::Debug for SimConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SimConfig")
             .field("max_ticks", &self.max_ticks)
             .field("parallelism", &self.parallelism)
-            .field("inject_fn", &self.inject_fn.is_some())
+            .field("inject_fn", &self.inject_fn.as_ref().map(|_| "<function>"))
             .finish()
     }
 }
@@ -321,5 +417,91 @@ mod tests {
         });
         let config = SimConfig { max_ticks: 10, parallelism: 2, inject_fn: Some(inject) };
         assert_eq!(config.max_ticks, 10);
+    }
+
+    #[test]
+    fn test_sim_config_new_constructor() {
+        let config = SimConfig::new(100, 4);
+        assert_eq!(config.max_ticks, 100);
+        assert_eq!(config.parallelism, 4);
+        assert!(config.inject_fn.is_none());
+    }
+
+    #[test]
+    fn test_sim_config_with_inject_fn_builder() {
+        let config = SimConfig::new(100, 4).with_inject_fn(|tick, world| {
+            if tick == 5 {
+                world.inject_variable("test_var".to_string(), 42.0);
+            }
+        });
+
+        assert_eq!(config.max_ticks, 100);
+        assert_eq!(config.parallelism, 4);
+        assert!(config.inject_fn.is_some());
+    }
+
+    #[test]
+    fn test_sim_config_builder_chain() {
+        let config = SimConfig::new(200, 8).with_inject_fn(|tick, world| {
+            world.inject_variable("tick_count".to_string(), tick as f32);
+        });
+
+        assert_eq!(config.max_ticks, 200);
+        assert_eq!(config.parallelism, 8);
+        assert!(config.inject_fn.is_some());
+    }
+
+    #[test]
+    fn test_world_snapshot_get_variable() {
+        let mut world = WorldState::new();
+        world.inject_variable("temperature".to_string(), 25.5);
+        world.inject_variable("humidity".to_string(), 65.0);
+
+        let snapshot = world.snapshot();
+
+        // Test existing variables
+        assert_eq!(snapshot.get_variable("temperature"), Some(25.5));
+        assert_eq!(snapshot.get_variable("humidity"), Some(65.0));
+
+        // Test non-existent variable
+        assert_eq!(snapshot.get_variable("nonexistent"), None);
+
+        // Test that variables are properly cloned
+        world.inject_variable("temperature".to_string(), 30.0); // Modify original
+        assert_eq!(snapshot.get_variable("temperature"), Some(25.5)); // Snapshot unchanged
+    }
+
+    #[test]
+    fn test_world_snapshot_preserves_variables() {
+        let mut world = WorldState::new();
+        world.inject_variable("test".to_string(), 42.0);
+
+        let snapshot = world.snapshot();
+
+        // Verify snapshot contains variables
+        assert_eq!(snapshot.get_variable("test"), Some(42.0));
+        assert_eq!(snapshot.variables.len(), 1);
+
+        // Verify variables are accessible via get_variable
+        assert_eq!(snapshot.get_variable("test"), world.get_variable("test"));
+    }
+
+    #[test]
+    fn test_inject_fn_variable_modification() {
+        // Test that the injection function can actually modify world variables
+        let mut world = WorldState::new();
+        world.inject_variable("counter".to_string(), 0.0);
+
+        let config = SimConfig::new(1, 1).with_inject_fn(|tick, world| {
+            let current = world.get_variable("counter").unwrap_or(0.0);
+            world.inject_variable("counter".to_string(), current + tick as f32);
+        });
+
+        // Manually call the injection function
+        if let Some(ref inject) = config.inject_fn {
+            inject(5, &mut world);
+        }
+
+        assert_eq!(world.get_variable("counter"), Some(5.0));
     }
 }
