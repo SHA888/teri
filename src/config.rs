@@ -116,6 +116,18 @@ impl Config {
             return Err(TeriError::Config("SIM_PARALLELISM must be > 0".to_string()));
         }
 
+        if self.api.bind_addr.trim().is_empty() {
+            return Err(TeriError::Config("BIND_ADDR cannot be empty".to_string()));
+        }
+
+        if self.persistence.memory_db_path.trim().is_empty() {
+            return Err(TeriError::Config("MEMORY_DB_PATH cannot be empty".to_string()));
+        }
+
+        if self.persistence.graph_db_path.trim().is_empty() {
+            return Err(TeriError::Config("GRAPH_DB_PATH cannot be empty".to_string()));
+        }
+
         Ok(())
     }
 }

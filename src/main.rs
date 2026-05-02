@@ -33,6 +33,17 @@ async fn main() -> Result<()> {
     let config = Config::from_env()?;
     tracing_subscriber::fmt().with_env_filter(&config.logging.level).init();
 
+    // Create data directories for persistence layer
+    let memory_dir = std::path::Path::new(&config.persistence.memory_db_path)
+        .parent()
+        .ok_or_else(|| TeriError::Config("Invalid memory DB path".to_string()))?;
+    std::fs::create_dir_all(memory_dir)
+        .map_err(|e| TeriError::Config(format!("Failed to create memory dir: {e}")))?;
+
+    let graph_dir = std::path::Path::new(&config.persistence.graph_db_path);
+    std::fs::create_dir_all(graph_dir)
+        .map_err(|e| TeriError::Config(format!("Failed to create graph dir: {e}")))?;
+
     let cli = Cli::parse();
     match cli.command {
         Commands::Run { seed, query, agents } => {
