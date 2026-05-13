@@ -1,13 +1,16 @@
 use crate::error::{Result, TeriError};
 use crate::sim::WorldSnapshot;
-use redb::{Database, ReadableTable, TableDefinition};
+use rocksdb::{DB as RocksDB, IteratorMode};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
 use uuid::Uuid;
 
-const AGENT_LTM_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("agent_ltm");
-const WORLD_SNAPSHOT_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("world_snapshots");
+// Key schema constants
+// agent:{uuid}:ltm:{timestamp} → MemoryEntry
+pub const AGENT_LTM_KEY_PREFIX: &str = "agent";
+// world:{sim_id}:tick:{n} → WorldSnapshot
+pub const WORLD_SNAPSHOT_KEY_PREFIX: &str = "world";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryEntry {
@@ -17,29 +20,18 @@ pub struct MemoryEntry {
 }
 
 pub struct MemoryStore {
-    db: Arc<Database>,
+    // RocksDB instance for all memory operations
+    db: Arc<RocksDB>,
 }
 
 impl MemoryStore {
     pub fn new<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let db = Database::create(path.as_ref())
-            .map_err(|e| TeriError::Memory(format!("Failed to open redb: {e}")))?;
-
-        let write_txn = db
-            .begin_write()
-            .map_err(|e| TeriError::Memory(format!("Failed to begin write transaction: {e}")))?;
-        {
-            let _ = write_txn
-                .open_table(AGENT_LTM_TABLE)
-                .map_err(|e| TeriError::Memory(format!("Failed to open agent_ltm table: {e}")))?;
-            let _ = write_txn.open_table(WORLD_SNAPSHOT_TABLE).map_err(|e| {
-                TeriError::Memory(format!("Failed to open world_snapshots table: {e}"))
-            })?;
-        }
-        write_txn
-            .commit()
-            .map_err(|e| TeriError::Memory(format!("Failed to commit transaction: {e}")))?;
-
+        // Ensure the directory exists
+        let rocks_path = path.as_ref().join("rocksdb");
+        std::fs::create_dir_all(&rocks_path)
+            .map_err(|e| TeriError::Memory(format!("Failed to create rocksdb dir: {e}")))?;
+        let db = RocksDB::open_default(&rocks_path)
+            .map_err(|e| TeriError::Memory(format!("Failed to open rocksdb: {e}")))?;
         Ok(Self { db: Arc::new(db) })
     }
 
@@ -48,24 +40,10 @@ impl MemoryStore {
         let key = format!("agent:{agent_id}:ltm:{ts}");
         let value = serde_json::to_vec(entry)
             .map_err(|e| TeriError::Memory(format!("Serialization error: {e}")))?;
-
         let db = self.db.clone();
         tokio::task::spawn_blocking(move || {
-            let write_txn = db.begin_write().map_err(|e| {
-                TeriError::Memory(format!("Failed to begin write transaction: {e}"))
-            })?;
-            {
-                let mut table = write_txn
-                    .open_table(AGENT_LTM_TABLE)
-                    .map_err(|e| TeriError::Memory(format!("Failed to open table: {e}")))?;
-                table
-                    .insert(key.as_str(), value.as_slice())
-                    .map_err(|e| TeriError::Memory(format!("Write error: {e}")))?;
-            }
-            write_txn
-                .commit()
-                .map_err(|e| TeriError::Memory(format!("Failed to commit: {e}")))?;
-            Ok(())
+            db.put(key.as_bytes(), &value)
+                .map_err(|e| TeriError::Memory(format!("Write error: {e}")))
         })
         .await
         .map_err(|e| TeriError::Memory(format!("Task join error: {e}")))?
@@ -74,24 +52,15 @@ impl MemoryStore {
     pub async fn read_ltm(&self, agent_id: Uuid, limit: usize) -> Result<Vec<MemoryEntry>> {
         let prefix = format!("agent:{agent_id}:ltm:");
         let db = self.db.clone();
-
         tokio::task::spawn_blocking(move || {
-            let read_txn = db
-                .begin_read()
-                .map_err(|e| TeriError::Memory(format!("Failed to begin read transaction: {e}")))?;
-            let table = read_txn
-                .open_table(AGENT_LTM_TABLE)
-                .map_err(|e| TeriError::Memory(format!("Failed to open table: {e}")))?;
-
             let mut entries = Vec::new();
-            let mut iter = table
-                .iter()
-                .map_err(|e| TeriError::Memory(format!("Failed to create iterator: {e}")))?;
-
-            while let Some(Ok((key, value))) = iter.next() {
-                let key_str = key.value();
+            let iter = db.iterator(IteratorMode::Start);
+            for item in iter {
+                let (k, v) = item.map_err(|e| TeriError::Memory(format!("Iterator error: {e}")))?;
+                let key_str = std::str::from_utf8(&k)
+                    .map_err(|e| TeriError::Memory(format!("Invalid UTF8 key: {e}")))?;
                 if key_str.starts_with(&prefix) {
-                    let entry: MemoryEntry = serde_json::from_slice(value.value())
+                    let entry: MemoryEntry = serde_json::from_slice(&v)
                         .map_err(|e| TeriError::Memory(format!("Deserialization error: {e}")))?;
                     entries.push(entry);
                     if entries.len() >= limit {
@@ -99,11 +68,17 @@ impl MemoryStore {
                     }
                 }
             }
-
             Ok(entries)
         })
         .await
         .map_err(|e| TeriError::Memory(format!("Task join error: {e}")))?
+    }
+
+    // Stub for future full‑text query on long‑term memory
+    pub async fn query_ltm(&self, _agent_id: Uuid, _query: &str) -> Result<Vec<MemoryEntry>> {
+        // TODO: integrate a vector‑search or simple substring filter.
+        // For now we return an empty vector to satisfy the API.
+        Ok(Vec::new())
     }
 
     pub async fn write_snapshot(
@@ -115,24 +90,10 @@ impl MemoryStore {
         let key = format!("world:{sim_id}:tick:{tick:010}");
         let value = bincode::serialize(snapshot)
             .map_err(|e| TeriError::Memory(format!("Serialization error: {e}")))?;
-
         let db = self.db.clone();
         tokio::task::spawn_blocking(move || {
-            let write_txn = db.begin_write().map_err(|e| {
-                TeriError::Memory(format!("Failed to begin write transaction: {e}"))
-            })?;
-            {
-                let mut table = write_txn
-                    .open_table(WORLD_SNAPSHOT_TABLE)
-                    .map_err(|e| TeriError::Memory(format!("Failed to open table: {e}")))?;
-                table
-                    .insert(key.as_str(), value.as_slice())
-                    .map_err(|e| TeriError::Memory(format!("Write error: {e}")))?;
-            }
-            write_txn
-                .commit()
-                .map_err(|e| TeriError::Memory(format!("Failed to commit: {e}")))?;
-            Ok(())
+            db.put(key.as_bytes(), &value)
+                .map_err(|e| TeriError::Memory(format!("Write error: {e}")))
         })
         .await
         .map_err(|e| TeriError::Memory(format!("Task join error: {e}")))?
@@ -141,21 +102,12 @@ impl MemoryStore {
     pub async fn read_snapshot(&self, sim_id: Uuid, tick: u32) -> Result<WorldSnapshot> {
         let key = format!("world:{sim_id}:tick:{tick:010}");
         let db = self.db.clone();
-
         tokio::task::spawn_blocking(move || {
-            let read_txn = db
-                .begin_read()
-                .map_err(|e| TeriError::Memory(format!("Failed to begin read transaction: {e}")))?;
-            let table = read_txn
-                .open_table(WORLD_SNAPSHOT_TABLE)
-                .map_err(|e| TeriError::Memory(format!("Failed to open table: {e}")))?;
-
-            let value = table
-                .get(key.as_str())
+            let v = db
+                .get(key.as_bytes())
                 .map_err(|e| TeriError::Memory(format!("Read error: {e}")))?
                 .ok_or_else(|| TeriError::Memory(format!("Snapshot not found: {key}")))?;
-
-            bincode::deserialize(value.value())
+            bincode::deserialize(&v)
                 .map_err(|e| TeriError::Memory(format!("Deserialization error: {e}")))
         })
         .await
@@ -165,29 +117,19 @@ impl MemoryStore {
     pub async fn read_history(&self, sim_id: Uuid) -> Result<Vec<WorldSnapshot>> {
         let prefix = format!("world:{sim_id}:tick:");
         let db = self.db.clone();
-
         tokio::task::spawn_blocking(move || {
-            let read_txn = db
-                .begin_read()
-                .map_err(|e| TeriError::Memory(format!("Failed to begin read transaction: {e}")))?;
-            let table = read_txn
-                .open_table(WORLD_SNAPSHOT_TABLE)
-                .map_err(|e| TeriError::Memory(format!("Failed to open table: {e}")))?;
-
             let mut snapshots = Vec::new();
-            let mut iter = table
-                .iter()
-                .map_err(|e| TeriError::Memory(format!("Failed to create iterator: {e}")))?;
-
-            while let Some(Ok((key, value))) = iter.next() {
-                let key_str = key.value();
+            let iter = db.iterator(IteratorMode::Start);
+            for item in iter {
+                let (k, v) = item.map_err(|e| TeriError::Memory(format!("Iterator error: {e}")))?;
+                let key_str = std::str::from_utf8(&k)
+                    .map_err(|e| TeriError::Memory(format!("Invalid UTF8 key: {e}")))?;
                 if key_str.starts_with(&prefix) {
-                    let snapshot: WorldSnapshot = bincode::deserialize(value.value())
+                    let snapshot: WorldSnapshot = bincode::deserialize(&v)
                         .map_err(|e| TeriError::Memory(format!("Deserialization error: {e}")))?;
                     snapshots.push(snapshot);
                 }
             }
-
             Ok(snapshots)
         })
         .await

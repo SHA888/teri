@@ -39,7 +39,7 @@ pub struct AgentMemory {
     pub short_term: VecDeque<MemoryEntry>,
     pub short_term_capacity: usize,
     #[serde(skip)]
-    pub long_term_db: Option<Arc<redb::Database>>,
+    pub long_term_db: Option<Arc<rocksdb::DB>>,
 }
 
 impl AgentMemory {
@@ -51,7 +51,7 @@ impl AgentMemory {
         }
     }
 
-    pub fn with_long_term_db(mut self, db: Arc<redb::Database>) -> Self {
+    pub fn with_long_term_db(mut self, db: Arc<rocksdb::DB>) -> Self {
         self.long_term_db = Some(db);
         self
     }

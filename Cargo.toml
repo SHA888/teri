@@ -18,6 +18,7 @@ name = "teri"
 path = "src/lib.rs"
 
 [dependencies]
+rocksdb = "0.21"
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 
@@ -55,7 +56,7 @@ async-stream = "0.3"
 async-trait = "0.1"
 
 # Persistent key-value store (agent memory)
-redb = "2"
+
 
 # Logging & tracing
 tracing = "0.1"

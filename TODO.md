@@ -10,6 +10,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 ## Phase 0: Project Foundation
 
 ### Directory Structure
+
 - [x] Create `src/` directory
 - [x] Move `main.rs` and `lib.rs` into `src/`
 - [x] Create module subdirectories:
@@ -25,6 +26,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 - [x] Create `data/` directory for persistent storage
 
 ### Configuration & Environment
+
 - [x] Implement configuration loader using `config` crate
 - [x] Create `Config` struct with all settings from `.env.example`
 - [x] Add config validation on startup
@@ -32,6 +34,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 - [x] Create logging utilities module
 
 ### LLM Client Abstraction (Critical Path)
+
 - [x] Define `LlmClient` trait in `src/llm.rs` (completely provider-agnostic)
   - [x] `async fn complete(&self, prompt: &str) -> Result<String>`
   - [x] `async fn complete_json<T>(&self, prompt: &str) -> Result<T>`
@@ -49,6 +52,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 - [x] Add example adapters in documentation (Anthropic, llama.cpp)
 
 ### Error Handling
+
 - [x] Define custom error types using `thiserror`
   - [x] `SeedError`
   - [x] `GraphError`
@@ -65,6 +69,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 ## Phase 1: Seed Module
 
 ### Core Types (`src/seed/mod.rs`)
+
 - [x] Define `SeedDocument` struct
   - [x] `id: Uuid`
   - [x] `raw_text: String`
@@ -75,6 +80,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 - [x] Implement `SeedIngestor::from_url(url: &str) -> Result<SeedDocument>`
 
 ### File Format Support
+
 - [x] **Plain text** - Direct passthrough
   - [x] Read file to string
   - [x] Extract basic metadata (filename, size, modified date)
@@ -91,6 +97,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
   - [x] Preserve structure in metadata
 
 ### Testing
+
 - [x] Unit tests for each file format
 - [x] Test error handling (missing files, malformed PDFs, etc.)
 - [x] Integration test with sample files in `examples/`
@@ -100,6 +107,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 ## Phase 2: Graph Module
 
 ### Core Types (`src/graph/mod.rs`)
+
 - [x] Define `Entity` struct
   - [x] `id: Uuid`
   - [x] `name: String`
@@ -112,6 +120,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
   - [x] `index: HashMap<String, NodeIndex>`
 
 -### Graph Construction
+
 - [x] Implement `KnowledgeGraph::new() -> Self`
 - [x] Implement `KnowledgeGraph::build(doc: &SeedDocument, llm: &dyn LlmClient) -> Result<Self>`
   - [x] Design LLM prompt for entity extraction
@@ -126,10 +135,12 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
   - [x] `get_subgraph(&self, entity_id: Uuid, depth: usize) -> KnowledgeGraph`
 
 ### Serialization
+
 - [x] Implement graph serialization to disk (optional feature)
 - [x] Implement graph deserialization from disk
 
 ### Testing
+
 - [x] Unit tests for graph construction
 - [x] Test entity/relation extraction with mock LLM
 - [x] Test graph query methods
@@ -140,6 +151,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 ## Phase 3: Agent Module
 
 ### Core Types (`src/agent/mod.rs`)
+
 - [x] Define `Persona` struct
   - [x] `name: String`
   - [x] `background: String`
@@ -160,6 +172,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
   - [x] `state: AgentState`
 
 ### Persona Generation
+
 - [x] Create persona template in `templates/persona_gen.jinja`
 - [x] Implement `PersonaGenerator` struct
 - [x] Implement `PersonaGenerator::generate(graph: &KnowledgeGraph, entity: &Entity, llm: &dyn LlmClient) -> Result<Persona>`
@@ -168,6 +181,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
   - [x] Parse and validate persona
 
 ### Agent Pool
+
 - [x] Define `AgentPool` struct
   - [x] `agents: Vec<Agent>`
   - [x] `group_memory: Arc<RwLock<Vec<MemoryEntry>>>`
@@ -180,6 +194,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 - [x] Implement `AgentPool::get_mut(&mut self, id: Uuid) -> Option<&mut Agent>`
 
 ### Agent Actions
+
 - [x] Define `Action` enum (Speak, Move, Interact, Observe, etc.) in `src/sim/mod.rs` (by design: actions are events in world state)
 - [x] Create action template in `templates/agent_action.jinja`
 - [x] Implement `Agent::step(&mut self, world: &WorldState, llm: &dyn LlmClient) -> Result<Action>`
@@ -190,6 +205,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
   - [x] Store action in memory
 
 ### Testing
+
 - [x] Unit tests for persona generation
 - [x] Unit tests for agent memory operations
 - [x] Unit tests for agent action generation
@@ -201,6 +217,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 ## Phase 4: Simulation Module
 
 ### Core Types (`src/sim/mod.rs`)
+
 - [x] Define `WorldState` struct
   - [x] `tick: u32`
   - [x] `agents: HashMap<Uuid, AgentSnapshot>` (lightweight agent state)
@@ -221,6 +238,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
   - [x] `final_state: WorldState`
 
 ### Simulation Engine
+
 - [x] Implement `SimEngine` struct
 - [x] Implement `SimEngine::new(config: SimConfig) -> Self`
 - [x] Implement `SimEngine::run(pool: &mut AgentPool, graph: &KnowledgeGraph, llm: &dyn LlmClient) -> Result<SimulationResult>`
@@ -238,17 +256,20 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
   - [x] Return simulation result
 
 ### State Management
+
 - [x] Implement `WorldState::new() -> Self`
 - [x] Implement `WorldState::apply(&mut self, agent_id: Uuid, action: Action)`
 - [x] Implement `WorldState::snapshot(&self) -> WorldSnapshot`
 - [x] Implement `WorldState::inject_variable(&mut self, key: String, value: f32)`
 
 ### Streaming Support
+
 - [x] Set up `tokio::sync::broadcast` channel
 - [x] Implement snapshot streaming to API layer
 - [x] Handle backpressure for slow consumers
 
 ### Testing
+
 - [x] Unit tests for world state operations
 - [x] Unit tests for action application
 - [x] Test parallel agent execution
@@ -260,36 +281,41 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 ## Phase 5: Memory Module
 
 ### Core Types (`src/memory/mod.rs`)
-- [ ] Define `MemoryStore` struct
+
+- [x] Define `MemoryStore` struct
   - [ ] `db: Arc<rocksdb::DB>`
-- [ ] Define key schemas as constants
-  - [ ] `agent:{uuid}:ltm:{timestamp}` → MemoryEntry
-  - [ ] `world:{sim_id}:tick:{n}` → WorldSnapshot
+- [x] Define key schemas as constants
+  - [x] `agent:{uuid}:ltm:{timestamp}` → MemoryEntry
+  - [x] `world:{sim_id}:tick:{n}` → WorldSnapshot
 
 ### Store Implementation
-- [ ] Implement `MemoryStore::new(path: &str) -> Result<Self>`
-  - [ ] Open/create RocksDB instance
-  - [ ] Configure column families if needed
-- [ ] Implement agent memory methods
-  - [ ] `write_ltm(&self, agent_id: Uuid, entry: &MemoryEntry) -> Result<()>`
-  - [ ] `read_ltm(&self, agent_id: Uuid, limit: usize) -> Result<Vec<MemoryEntry>>`
-  - [ ] `query_ltm(&self, agent_id: Uuid, query: &str) -> Result<Vec<MemoryEntry>>` (stub for now)
-- [ ] Implement world snapshot methods
-  - [ ] `write_snapshot(&self, sim_id: Uuid, tick: u32, snapshot: &WorldSnapshot) -> Result<()>`
-  - [ ] `read_snapshot(&self, sim_id: Uuid, tick: u32) -> Result<WorldSnapshot>`
-  - [ ] `read_history(&self, sim_id: Uuid) -> Result<Vec<WorldSnapshot>>`
+
+- [x] Implement `MemoryStore::new(path: &str) -> Result<Self>`
+  - [x] Open/create RocksDB instance
+  - [x] Configure column families if needed
+- [x] Implement agent memory methods
+  - [x] `write_ltm(&self, agent_id: Uuid, entry: &MemoryEntry) -> Result<()>`
+  - [x] `read_ltm(&self, agent_id: Uuid, limit: usize) -> Result<Vec<MemoryEntry>>`
+  - [x] `query_ltm(&self, agent_id: Uuid, query: &str) -> Result<Vec<MemoryEntry>>` (stub for now)
+- [x] Implement world snapshot methods
+  - [x] `write_snapshot(&self, sim_id: Uuid, tick: u32, snapshot: &WorldSnapshot) -> Result<()>`
+  - [x] `read_snapshot(&self, sim_id: Uuid, tick: u32) -> Result<WorldSnapshot>`
+  - [x] `read_history(&self, sim_id: Uuid) -> Result<Vec<WorldSnapshot>>`
 
 ### Async Integration
+
 - [ ] Wrap blocking RocksDB calls in `tokio::task::spawn_blocking`
 - [ ] Create async wrapper methods for all store operations
 
 ### Testing
+
 - [ ] Unit tests for memory write/read
 - [ ] Test snapshot persistence
 - [ ] Test concurrent access
 - [ ] Test error handling (corrupted DB, etc.)
 
 ### Future: Vector Search (Stub)
+
 - [ ] Add placeholder for vector similarity search
 - [ ] Document integration points for `hnswlib-rs` or FAISS
 
@@ -298,6 +324,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 ## Phase 6: Report Module
 
 ### Core Types (`src/report/mod.rs`)
+
 - [ ] Define `TimelineEvent` struct
   - [ ] `tick: u32`
   - [ ] `description: String`
@@ -314,6 +341,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
   - [ ] `raw_query: String`
 
 ### Report Agent
+
 - [ ] Define `ReportAgent` struct
 - [ ] Create report template in `templates/report_gen.jinja`
 - [ ] Implement `ReportAgent::generate(result: &SimulationResult, query: &str, llm: &dyn LlmClient) -> Result<PredictionReport>`
@@ -325,11 +353,13 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
   - [ ] Assemble report struct
 
 ### Streaming Report Generation
+
 - [ ] Implement `ReportAgent::generate_stream()` for SSE
   - [ ] Stream LLM response chunks
   - [ ] Yield partial report updates
 
 ### Interactive Chat
+
 - [ ] Define `ChatMessage` struct
 - [ ] Create chat template in `templates/agent_chat.jinja`
 - [ ] Implement `ReportAgent::chat(message: &str, context: &SimulationResult, llm: &dyn LlmClient) -> Result<String>`
@@ -341,6 +371,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
   - [ ] Include persona + memory in context
 
 ### Testing
+
 - [ ] Unit tests for report generation
 - [ ] Test timeline extraction
 - [ ] Test agent highlight selection
@@ -351,6 +382,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 ## Phase 7: API Module
 
 ### Core Types (`src/api/mod.rs`)
+
 - [ ] Define request/response structs
   - [ ] `CreateSimRequest` (seed, query, agent_count)
   - [ ] `CreateSimResponse` (sim_id, status)
@@ -360,6 +392,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
   - [ ] `ChatResponse` (message)
 
 ### API Server
+
 - [ ] Define `ApiState` struct
   - [ ] `sims: Arc<RwLock<HashMap<Uuid, SimulationHandle>>>`
   - [ ] `llm_client: Arc<dyn LlmClient>`
@@ -372,6 +405,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
   - [ ] `broadcast_rx: broadcast::Receiver<WorldSnapshot>`
 
 ### Endpoints
+
 - [ ] `POST /sim` - Create and start simulation
   - [ ] Parse request
   - [ ] Ingest seed
@@ -400,12 +434,14 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
   - [ ] Return response
 
 ### Middleware
+
 - [ ] Set up `tower-http` CORS
 - [ ] Set up `tower-http` tracing middleware
 - [ ] Add request ID generation
 - [ ] Add error handling middleware
 
 ### Server Lifecycle
+
 - [ ] Implement `serve(config: Config) -> Result<()>`
   - [ ] Initialize API state
   - [ ] Build axum router
@@ -413,6 +449,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
   - [ ] Graceful shutdown on SIGTERM
 
 ### Testing
+
 - [ ] Integration tests for each endpoint
 - [ ] Test SSE streaming
 - [ ] Test concurrent simulations
@@ -423,6 +460,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 ## Phase 8: CLI Integration
 
 ### Main Entry Point (`src/main.rs`)
+
 - [ ] Implement `Commands::Run` handler
   - [ ] Load config
   - [ ] Initialize LLM client
@@ -441,6 +479,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
   - [ ] Handle graceful shutdown
 
 ### Additional CLI Commands
+
 - [ ] Add `inspect` subcommand
   - [ ] Inspect saved simulation
   - [ ] Query specific tick
@@ -450,6 +489,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
   - [ ] Interactive tick-by-tick navigation
 
 ### Testing
+
 - [ ] End-to-end test with example seed file
 - [ ] Test CLI argument parsing
 - [ ] Test error handling
@@ -459,6 +499,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 ## Phase 9: Templates & Prompts
 
 ### Persona Templates (`templates/`)
+
 - [ ] `persona_gen.jinja` - Agent persona generation
   - [ ] Include graph context
   - [ ] Specify output format (JSON)
@@ -473,11 +514,13 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
   - [ ] Natural conversation style
 
 ### Template Loading
+
 - [ ] Implement template loader using `minijinja`
 - [ ] Cache compiled templates
 - [ ] Add template validation on startup
 
 ### Testing
+
 - [ ] Test template rendering with sample data
 - [ ] Validate JSON output from templates
 
@@ -486,12 +529,14 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 ## Phase 10: Examples & Documentation
 
 ### Example Files (`examples/`)
+
 - [ ] `seed.txt` - Simple text seed
 - [ ] `policy.pdf` - Sample policy document (if available)
 - [ ] `news.json` - Structured news data
 - [ ] `web_article.html` - Sample HTML content
 
 ### Documentation
+
 - [ ] Update README with:
   - [ ] Installation instructions
   - [ ] Detailed usage examples
@@ -515,23 +560,27 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 ## Phase 11: Testing & Quality
 
 ### Unit Tests
+
 - [ ] Achieve >80% code coverage
 - [ ] Test all error paths
 - [ ] Test edge cases (empty graphs, single agent, etc.)
 
 ### Integration Tests
+
 - [ ] End-to-end pipeline test
 - [ ] Multi-simulation concurrency test
 - [ ] Memory persistence test
 - [ ] API integration test
 
 ### Performance Tests
+
 - [ ] Benchmark agent step execution
 - [ ] Benchmark graph construction
 - [ ] Benchmark parallel simulation
 - [ ] Profile memory usage
 
 ### Code Quality
+
 - [ ] Run `clippy` and fix all warnings
 - [ ] Run `rustfmt` on all code
 - [ ] Add CI/CD pipeline (GitHub Actions)
@@ -545,6 +594,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 ## Phase 12: Production Readiness
 
 ### Performance Optimization
+
 - [ ] Profile with `cargo flamegraph`
 - [ ] Optimize hot paths identified in profiling
 - [ ] Tune rayon thread pool size
@@ -552,18 +602,21 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 - [ ] Add caching where appropriate
 
 ### Error Handling & Resilience
+
 - [ ] Add retry logic for LLM calls
 - [ ] Add timeout handling
 - [ ] Add graceful degradation for non-critical failures
 - [ ] Improve error messages for users
 
 ### Monitoring & Observability
+
 - [ ] Add structured logging with context
 - [ ] Add metrics collection (optional)
 - [ ] Add health check endpoint
 - [ ] Add simulation progress tracking
 
 ### Deployment
+
 - [ ] Create Dockerfile
 - [ ] Create docker-compose.yml for local dev
 - [ ] Document deployment options
@@ -573,6 +626,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 - [ ] Add deployment scripts
 
 ### Security
+
 - [ ] Validate all user inputs
 - [ ] Sanitize LLM outputs
 - [ ] Add rate limiting to API
@@ -584,36 +638,42 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 ## Phase 13: Future Enhancements (Post-MVP)
 
 ### Local LLM Support
+
 - [ ] Research `candle` integration
 - [ ] Research `llama.cpp` FFI
 - [ ] Implement local LLM client
 - [ ] Add model loading/management
 
 ### Vector Memory
+
 - [ ] Integrate `hnswlib-rs` or FAISS
 - [ ] Implement embedding generation
 - [ ] Implement semantic memory retrieval
 - [ ] Update agent context retrieval to use vectors
 
 ### WASM Target
+
 - [ ] Evaluate WASM compatibility
 - [ ] Create WASM build target
 - [ ] Create browser demo
 - [ ] Document WASM limitations
 
 ### Distributed Simulation
+
 - [ ] Design agent sharding strategy
 - [ ] Implement RPC layer (`tarpc` or gRPC)
 - [ ] Implement distributed world state
 - [ ] Test multi-node simulation
 
 ### Frontend
+
 - [ ] Create separate frontend repo
 - [ ] Implement real-time visualization
 - [ ] Implement interactive controls
 - [ ] Implement agent chat interface
 
 ### Community Seed Adapters
+
 - [ ] Define `CommunityAdapter` trait in `src/seed/community/mod.rs`
   - [ ] `async fn fetch_domains(&self) -> Result<Vec<CommunityDomain>>`
   - [ ] `async fn fetch_contributors(&self, domain: &str) -> Result<Vec<CommunityContributor>>`
@@ -636,6 +696,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 - [ ] Add integration tests with mock HTTP responses per adapter
 
 ### Community Feedback Adapters
+
 - [ ] Define `CommunityFeedback` trait in `src/seed/community/mod.rs`
   - [ ] `async fn push_topic_signals(&self, signals: Vec<TopicSignal>) -> Result<()>`
   - [ ] `async fn push_contributor_trajectories(&self, trajectories: Vec<ContributorTrajectory>) -> Result<()>`
@@ -654,6 +715,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 ## Completion Criteria
 
 **MVP Ready:**
+
 - ✅ All Phase 0-8 tasks completed
 - ✅ End-to-end pipeline working
 - ✅ API server functional
@@ -661,6 +723,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 - ✅ Example simulations run successfully
 
 **Production Ready:**
+
 - ✅ All Phase 0-12 tasks completed
 - ✅ >80% test coverage
 - ✅ Performance benchmarks met
@@ -668,6 +731,7 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 - ✅ Deployment guide ready
 
 **Future-Proof:**
+
 - ✅ Phase 13 roadmap documented
 - ✅ Extension points identified
 - ✅ Community contribution guidelines ready
