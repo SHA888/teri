@@ -38,22 +38,11 @@ pub struct MemoryEntry {
 pub struct AgentMemory {
     pub short_term: VecDeque<MemoryEntry>,
     pub short_term_capacity: usize,
-    #[serde(skip)]
-    pub long_term_db: Option<Arc<rocksdb::DB>>,
 }
 
 impl AgentMemory {
     pub fn new(capacity: usize) -> Self {
-        Self {
-            short_term: VecDeque::with_capacity(capacity),
-            short_term_capacity: capacity,
-            long_term_db: None,
-        }
-    }
-
-    pub fn with_long_term_db(mut self, db: Arc<rocksdb::DB>) -> Self {
-        self.long_term_db = Some(db);
-        self
+        Self { short_term: VecDeque::with_capacity(capacity), short_term_capacity: capacity }
     }
 
     pub fn add_memory(&mut self, entry: MemoryEntry) {

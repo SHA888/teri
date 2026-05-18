@@ -309,10 +309,10 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 
 ### Testing
 
-- [ ] Unit tests for memory write/read
-- [ ] Test snapshot persistence
-- [ ] Test concurrent access
-- [ ] Test error handling (corrupted DB, etc.)
+- [x] Unit tests for memory write/read
+- [x] Test snapshot persistence
+- [x] Test concurrent access
+- [x] Test error handling (corrupted DB, etc.)
 
 ### Future: Vector Search (Stub)
 

@@ -19,6 +19,7 @@ pub struct MemoryEntry {
     pub importance: f32,
 }
 
+#[derive(Clone)]
 pub struct MemoryStore {
     // RocksDB instance for all memory operations
     db: Arc<RocksDB>,
@@ -164,6 +165,57 @@ mod tests {
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
         let db_path = temp_dir.path().join("test.redb");
         let _store = MemoryStore::new(&db_path).expect("Failed to create memory store");
+    }
+
+    #[tokio::test]
+    async fn test_snapshot_persistence() {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let db_path = temp_dir.path().join("test.redb");
+        let store = MemoryStore::new(&db_path).expect("Failed to create memory store");
+        let sim_id = Uuid::new_v4();
+        let snapshot = WorldSnapshot {
+            tick: 1,
+            agents: std::collections::HashMap::new(),
+            events: Vec::new(),
+            variables: std::collections::HashMap::new(),
+        };
+        store.write_snapshot(sim_id, 1, &snapshot).await.expect("Write snapshot failed");
+        let read = store.read_snapshot(sim_id, 1).await.expect("Read snapshot failed");
+        assert_eq!(read.tick, snapshot.tick);
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_access() {
+        use futures::future::join_all;
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let db_path = temp_dir.path().join("test.redb");
+        let store = MemoryStore::new(&db_path).expect("Failed to create memory store");
+        let agent_id = Uuid::new_v4();
+        let base_time = chrono::Utc::now();
+        let mut futures = Vec::new();
+        for i in 0..10 {
+            let store_clone = store.clone();
+            let entry = MemoryEntry {
+                timestamp: base_time + chrono::Duration::milliseconds(i * 10),
+                content: format!("Entry {}", i),
+                importance: i as f32 * 0.1,
+            };
+            futures.push(tokio::spawn(async move {
+                store_clone.write_ltm(agent_id, &entry).await.unwrap();
+            }));
+        }
+        join_all(futures).await;
+        let entries = store.read_ltm(agent_id, 20).await.expect("Read failed");
+        assert_eq!(entries.len(), 10);
+    }
+
+    #[tokio::test]
+    async fn test_error_handling_invalid_path() {
+        // Provide a path that cannot be created (e.g., root on Unix, but on Windows use a reserved name)
+        let invalid_path =
+            if cfg!(windows) { "C:\\invalid_path\\?*" } else { "/root/invalid_path" };
+        let result = MemoryStore::new(invalid_path);
+        assert!(result.is_err());
     }
 
     #[tokio::test]
