@@ -304,8 +304,8 @@ This checklist tracks end-to-end development of Teri, organized by implementatio
 
 ### Async Integration
 
-- [ ] Wrap blocking RocksDB calls in `tokio::task::spawn_blocking`
-- [ ] Create async wrapper methods for all store operations
+- [x] Wrap blocking RocksDB calls in `tokio::task::spawn_blocking`
+- [x] Create async wrapper methods for all store operations
 
 ### Testing
 
